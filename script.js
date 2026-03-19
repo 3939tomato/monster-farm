@@ -35,6 +35,7 @@
         let weather = 'sunny';
         let weatherTimer = 1800; 
         let lightnings = [];
+        let raindrops = [];
 
         const artData = {
             tree: { p: ['#5e3c27', '#3d994e'], d: [[0,2,2,0],[2,2,2,2],[0,1,1,0]] },
@@ -312,19 +313,43 @@
             document.getElementById('bookScreen').classList.add('active');
             const grid = document.getElementById('bookGrid'); grid.innerHTML = '';
             speciesBook.forEach((s, i) => {
-                const currentCount = monsters.filter(m => m.species === s.name).length;
+                const living = monsters.filter(m => m.species === s.name);
+                const currentCount = living.length;
+                let highestLvStr = "なし";
+                let btnHtml = "";
+                if (currentCount > 0) {
+                    const topMonster = living.reduce((max, m) => m.level > max.level ? m : max, living[0]);
+                    highestLvStr = `Lv ${topMonster.level}`;
+                    btnHtml = `<button onclick="focusOnTopMonster(${i})" class="btn" style="padding:5px 10px; font-size:11px; background:#2196F3; width:80%; margin-top:5px;">👑最高Lvを追従</button>`;
+                }
+
                 grid.innerHTML += `<div class="book-item">
                     <button class="delete-x" onclick="deleteSpecies(${i})">×</button>
                     <img src="${s.url}" class="book-img"><br>
                     <b>${s.name}</b> [${s.diet}]<br>
                     <div style="font-size:11px; background:#f0f0f0; padding:5px; border-radius:5px; margin:5px 0;">
                         生存数: <span style="color:blue; font-weight:bold;">${currentCount}</span><br>
+                        最高Lv: <span style="color:#d32f2f; font-weight:bold;">${highestLvStr}</span><br>
                         耐性🔥${s.h}❄️${s.c}<br>
                         放流セット数: <button class="qty-btn" onclick="changeQty(${i}, -1)">-</button><span>${s.count}</span><button class="qty-btn" onclick="changeQty(${i}, 1)">+</button>
                     </div>
                     <button onclick="spawnMore(${i})" class="btn" style="padding:5px 10px; font-size:11px; background:#4CAF50; width:80%;">追加放流</button>
+                    ${btnHtml}
                 </div>`;
             });
+        }
+
+        function focusOnTopMonster(index) {
+            const sName = speciesBook[index].name;
+            const living = monsters.filter(m => m.species === sName);
+            if (living.length === 0) return;
+            const topMonster = living.reduce((max, m) => m.level > max.level ? m : max, living[0]);
+            selectedObject = topMonster;
+            isFocus = true;
+            document.getElementById('focusBtn').classList.add('active-focus');
+            document.getElementById('focusBtn').innerText = "注目追従: ON";
+            document.getElementById('targetMonitor').style.display = 'block';
+            closeBook();
         }
 
         let currentTool = 'pen', pixels = Array(32).fill().map(()=>Array(32).fill(null)), drawing = false;
@@ -441,6 +466,30 @@
             
             if(isFocus && selectedObject instanceof Monster) { camX = selectedObject.x - (gCanvas.width/2)/zoom; camY = selectedObject.y - (gCanvas.height/2)/zoom; }
             
+            // --- 追加：天候による画面暗転と雨エフェクト ---
+            if (weather === 'rain' || weather === 'storm') {
+                gCtx.fillStyle = weather === 'storm' ? "rgba(0, 0, 0, 0.4)" : "rgba(0, 0, 0, 0.2)";
+                gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height);
+                
+                if (gameSpeed > 0) {
+                    let dropCount = weather === 'storm' ? 5 : 2;
+                    for(let i=0; i<dropCount * gameSpeed; i++) {
+                        raindrops.push({ x: Math.random() * gCanvas.width, y: -20, l: Math.random() * 20 + 10, v: Math.random() * 10 + 15 });
+                    }
+                }
+                gCtx.strokeStyle = "rgba(174, 194, 224, 0.5)";
+                gCtx.lineWidth = 2;
+                gCtx.beginPath();
+                raindrops.forEach(r => {
+                    gCtx.moveTo(r.x, r.y);
+                    gCtx.lineTo(r.x - r.l * 0.3, r.y + r.l);
+                    if (gameSpeed > 0) { r.x -= r.v * 0.3 * gameSpeed; r.y += r.v * gameSpeed; }
+                });
+                gCtx.stroke();
+                raindrops = raindrops.filter(r => r.y < gCanvas.height && r.x > -50);
+            }
+            // ---------------------------------------------
+
             // 雷の描画
             lightnings.forEach(l => {
                 if (l.timer > 0) {
