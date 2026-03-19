@@ -113,7 +113,41 @@
                 this.personality = this.totalStat < 30 ? "おくびょう" : "まじめ";
                 
                 this.lifeTimer = Math.floor((Math.random() * 350 + 150) * 60); 
+
+                // RPG要素
+                this.level = 1;
+                this.exp = 0;
+                this.nextExp = 100;
             }
+
+            gainExp(amount) {
+                this.exp += amount;
+                if (this.exp >= this.nextExp) {
+                    this.levelUp();
+                }
+            }
+
+            levelUp() {
+                this.level++;
+                this.exp = 0;
+                this.nextExp = Math.floor(this.nextExp * 1.5); // レベルが高いほど必要経験値アップ
+                
+                // パワー、スピード、体力がランダムで1上がる
+                const rand = Math.random();
+                if (rand < 0.33) {
+                    this.power += 1;
+                } else if (rand < 0.66) {
+                    this.speedVal += 0.1;
+                    this.speed = this.speedVal;
+                } else {
+                    this.stamina += 1;
+                    this.hpMax = this.stamina * 5 + 50;
+                    this.hp = Math.min(this.hpMax, this.hp + 20); // 少し回復
+                }
+                
+                addLog(`🆙 ${this.species}がLv${this.level}になった！`);
+            }
+
             decideHome() {
                 if(this.heatResist >= 20 || this.heatResist > this.coldResist + 5) return "desert";
                 if(this.coldResist >= 20 || this.coldResist > this.heatResist + 5) return "snow";
@@ -153,10 +187,22 @@
                     
                     if (this.diet === "肉食") {
                         let target = monsters.find(m => m !== this && m.species !== this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-                        if (target) { target.hp -= (this.power / 10) + 1; if (target.hp <= 0) target.die("捕食"); }
+                        if (target) { 
+                            target.hp -= (this.power / 10) + 1; 
+                            if (target.hp <= 0) {
+                                target.die("捕食");
+                                this.gainExp(50); // モンスターを捕食で経験値+50
+                            }
+                        }
                     } else if (this.diet === "雑食") {
                         let target = monsters.find(m => m.diet === "草食" && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-                        if (target) { target.hp -= (this.power / 10) + 1; if (target.hp <= 0) target.die("捕食"); }
+                        if (target) { 
+                            target.hp -= (this.power / 10) + 1; 
+                            if (target.hp <= 0) {
+                                target.die("捕食");
+                                this.gainExp(50); // モンスターを捕食で経験値+50
+                            }
+                        }
                     }
                 }
 
@@ -171,7 +217,6 @@
                     }
 
                     let searchDist = 400;
-                    // エサ探し：魚は草食モンスターには無視させる
                     let food = foods.find(f => {
                         if (f.type === 'fish' && this.diet === "草食") return false;
                         return Math.sqrt((this.x-f.x)**2+(this.y-f.y)**2) < searchDist;
@@ -211,14 +256,14 @@
                 }
 
                 if (this.hunger > 20) {
-                    corpses.forEach((c, i) => { if (Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < 50 && (this.diet!=="草食")) { this.hunger = Math.max(0, this.hunger-60); this.hp = Math.min(this.hpMax, this.hp+40); corpses.splice(i, 1); } });
+                    corpses.forEach((c, i) => { if (Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < 50 && (this.diet!=="草食")) { this.hunger = Math.max(0, this.hunger-60); this.hp = Math.min(this.hpMax, this.hp+40); corpses.splice(i, 1); this.gainExp(50); } });
                     foods.forEach((f, i) => { 
                         if (Math.sqrt((this.x+30-f.x)**2+(this.y+30-f.y)**2) < 50) { 
-                            // 食べる際も魚は草食には食べさせない
                             if (f.type === 'fish' && this.diet === "草食") return;
                             this.hunger = Math.max(0, this.hunger-40); 
                             this.hp = Math.min(this.hpMax, this.hp+20); 
                             foods.splice(i, 1); 
+                            this.gainExp(10); // エサを食べるで経験値+10
                         } 
                     });
                 }
@@ -227,16 +272,26 @@
             draw() {
                 const sx = (this.x - camX) * zoom, sy = (this.y - camY) * zoom;
                 if (sx < -100 || sx > gCanvas.width + 100 || sy < -100 || sy > gCanvas.height + 100) return;
-                const s = (60/32)*zoom;
+                
+                // レベルアップで少しずつ巨大化（基本60 + Lvごとに増分）
+                const displaySize = 60 + (this.level - 1) * 4;
+                const s = (displaySize/32)*zoom;
+                
                 for(let y=0; y<32; y++) for(let x=0; x<32; x++) if(this.data[y][x]){ gCtx.fillStyle = this.data[y][x]; gCtx.fillRect(sx+x*s, sy+y*s, s+1, s+1); }
-                if (selectedObject === this) { gCtx.strokeStyle = "yellow"; gCtx.lineWidth = 3; gCtx.strokeRect(sx, sy, 60*zoom, 60*zoom); }
+                if (selectedObject === this) { gCtx.strokeStyle = "yellow"; gCtx.lineWidth = 3; gCtx.strokeRect(sx, sy, displaySize*zoom, displaySize*zoom); }
             }
         }
 
         gCanvas.addEventListener('mousedown', (e) => {
             isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY;
             const mx = (e.clientX / zoom) + camX, my = (e.clientY / zoom) + camY;
-            let found = monsters.find(m => mx > m.x && mx < m.x+60 && my > m.y && my < m.y+60);
+            
+            // 判定サイズの計算（Lvによる巨大化を考慮）
+            let found = monsters.find(m => {
+                const size = 60 + (m.level - 1) * 4;
+                return mx > m.x && mx < m.x+size && my > m.y && my < m.y+size;
+            });
+            
             if(!found) found = foods.find(f => Math.sqrt((mx-f.x)**2 + (my-f.y)**2) < 40);
             if(!found) found = corpses.find(c => Math.sqrt((mx-c.x)**2 + (my-c.y)**2) < 40);
             selectedObject = found;
@@ -245,18 +300,14 @@
         window.addEventListener('mousemove', (e) => { if(isDragging && !isFocus){ camX-=(e.clientX-lastMouseX)/zoom; camY-=(e.clientY-lastMouseY)/zoom; } lastMouseX=e.clientX; lastMouseY=e.clientY; });
         window.addEventListener('mouseup', () => isDragging = false);
         
-        // ズーム機能：カーソルを中心に拡大縮小
         window.addEventListener('wheel', (e) => {
             e.preventDefault();
             const mx = e.clientX, my = e.clientY;
             const worldX = mx / zoom + camX, worldY = my / zoom + camY;
-            
             zoom *= e.deltaY > 0 ? 0.9 : 1.1;
             zoom = Math.max(0.01, Math.min(3.0, zoom));
-            
             camX = worldX - mx / zoom;
             camY = worldY - my / zoom;
-            
             document.getElementById('zoomSlider').value = zoom * 100;
         }, {passive:false});
 
@@ -324,22 +375,17 @@
                 return {p, url: can.toDataURL()};
             };
             const blue = getSlimeData("#42a5f5"), red = getSlimeData("#ef5350");
-            
-            // 図鑑に登録
             speciesBook.push({name:"ブルースライム",url:blue.url,pixels:blue.p,mi:10,ma:20,diet:"雑食",h:0,c:0,count:15});
             speciesBook.push({name:"レッドスライム",url:red.url,pixels:red.p,mi:10,ma:20,diet:"雑食",h:0,c:0,count:25});
-            
-            // 初回放流
             for(let i=0; i<15; i++) monsters.push(new Monster(blue.p,"ブルースライム",10,20,blue.url,"雑食",0,0));
             for(let i=0; i<25; i++) monsters.push(new Monster(red.p,"レッドスライム",10,20,red.url,"雑食",0,0));
         }
 
-        // --- セーブ機能とロード機能の追加 ---
         function saveGame() {
             const saveData = {
                 monsters: monsters.map(m => {
                     let mData = Object.assign({}, m);
-                    delete mData.cachedAllies; // エラー回避のため循環参照を削除
+                    delete mData.cachedAllies;
                     return mData;
                 }),
                 speciesBook: speciesBook,
@@ -374,17 +420,15 @@
                     camY = data.camY !== undefined ? data.camY : (CHUNK * 4);
                     zoom = data.zoom || 0.3;
                     document.getElementById('zoomSlider').value = zoom * 100;
-                    
                     monsters = [];
                     (data.monsters || []).forEach(m => {
                         let newM = new Monster(m.data, m.species, 10, 10, m.artUrl, m.diet, m.heatResist, m.coldResist);
                         Object.assign(newM, m);
-                        newM.cachedAllies = []; // 初期化
+                        newM.cachedAllies = [];
                         monsters.push(newM);
                     });
                     addLog('📂 データをロードしました！');
                 } catch(e) {
-                    console.error("セーブデータの読み込みに失敗しました", e);
                     initEnvironment(); initSlimes();
                 }
             } else {
@@ -419,7 +463,15 @@
                 let statsHtml = "";
                 if(obj instanceof Monster) {
                     obj.data.forEach((row,y)=>row.forEach((c,x)=>{if(c){tCtx.fillStyle=c; tCtx.fillRect(x,y,1,1);}}));
-                    statsHtml = `<b>${obj.species}</b> [${obj.diet}]<br>耐性: 🔥${obj.heatResist} ❄️${obj.coldResist}<br>合計値: ${Math.floor(obj.totalStat)}<br>パワー: ${Math.floor(obj.power)}<br>スピード: ${Math.floor(obj.speedVal * 10)}<br>体力: ${Math.floor(obj.stamina)}<br>HP: ${Math.floor(obj.hp)} / ${Math.floor(obj.hpMax)}<br>空腹: ${Math.floor(obj.hunger)}%<br>性格: ${obj.personality}`;
+                    statsHtml = `<b>${obj.species}</b> [${obj.diet}]<br>
+                        <span style="color:#ffeb3b; font-weight:bold;">Lv ${obj.level}</span> (次まで: ${obj.nextExp - obj.exp})<br>
+                        耐性: 🔥${obj.heatResist} ❄️${obj.coldResist}<br>
+                        パワー: ${Math.floor(obj.power)}<br>
+                        スピード: ${Math.floor(obj.speedVal * 10)}<br>
+                        体力: ${Math.floor(obj.stamina)}<br>
+                        HP: ${Math.floor(obj.hp)} / ${Math.floor(obj.hpMax)}<br>
+                        空腹: ${Math.floor(obj.hunger)}%<br>
+                        性格: ${obj.personality}`;
                 } else if(obj.type) { 
                     drawPixelArt(tCtx, 4, 4, artData[obj.type].p, artData[obj.type].d, 6, false);
                     statsHtml = `<b>${obj.type}</b> (自然のエサ)<br><br>空腹回復: <span style="color:#4CAF50;">40</span><br>HP回復: <span style="color:#2196F3;">20</span>`;
@@ -435,5 +487,5 @@
         
         window.onresize = () => { gCanvas.width = window.innerWidth; gCanvas.height = window.innerHeight; };
         window.onresize(); 
-        loadGame(); // 初期化をloadGame()に置き換えました
+        loadGame();
         mainLoop();
