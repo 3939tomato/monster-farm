@@ -26,6 +26,8 @@
         <div id="logPanel"></div>
         <div id="menuBtn" onclick="toggleMenu()">☰</div>
         <div id="menuPanel">
+            <button class="btn" onclick="saveGame()" style="background:#4CAF50;">セーブする</button>
+            <button class="btn" onclick="resetGame()" style="background:#f44336;">データをリセット</button>
             <button class="btn" onclick="openEditor()">モンスターを描く</button>
             <button class="btn" onclick="openBook()" style="background:#795548;">図鑑・種族管理</button>
             <p style="margin:5px 0; font-size:14px;">牧場の総個体数: <span id="count">0</span></p>
