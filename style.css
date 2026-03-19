@@ -1,0 +1,43 @@
+body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #90ee90; font-family: sans-serif; }
+        .screen { display: none; width: 100%; height: 100%; position: relative; }
+        .active { display: block !important; }
+        #gameCanvas { display: block; background: #7cc77c; image-rendering: pixelated; cursor: grab; }
+        #gameCanvas:active { cursor: grabbing; }
+        
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+
+        #menuBtn { position: fixed; top: 20px; right: 20px; width: 50px; height: 50px; background: white; border-radius: 10px; border: 3px solid #333; cursor: pointer; z-index: 100; font-size: 24px; display: flex; align-items: center; justify-content: center; }
+        #menuPanel { position: fixed; top: 80px; right: 20px; background: white; border: 3px solid #333; border-radius: 10px; padding: 15px; display: none; flex-direction: column; gap: 10px; z-index: 101; }
+
+        #targetMonitor { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.85); color: white; border: 2px solid #fff; border-radius: 10px; padding: 15px; width: 220px; pointer-events: none; z-index: 90; display: none; min-height: 180px; }
+        #targetPreview { width: 64px; height: 64px; background: rgba(255,255,255,0.1); margin: 0 auto 10px; display: block; image-rendering: pixelated; }
+        #targetStats { font-size: 13px; line-height: 1.4; }
+        
+        #focusBtn { position: fixed; top: 400px; left: 20px; z-index: 100; padding: 10px; background: white; border: 2px solid #333; border-radius: 8px; cursor: pointer; font-weight: bold; width: 180px; }
+        #focusBtn.active-focus { background: #ffeb3b; }
+
+        #zoomControl { position: fixed; bottom: 20px; left: 20px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; border: 2px solid #333; z-index: 100; }
+        #speedControl { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 10px; border-radius: 10px; border: 2px solid #333; display: flex; gap: 5px; z-index: 100; }
+        .speed-btn { padding: 5px 10px; cursor: pointer; border: 1px solid #666; border-radius: 4px; }
+        .active-speed { background: #ffeb3b; border-color: #f57f17; }
+
+        #logPanel { position: fixed; bottom: 80px; right: 20px; width: 220px; height: 120px; background: rgba(0,0,0,0.6); color: white; border-radius: 5px; padding: 8px; font-size: 11px; pointer-events: none; z-index: 105; display: flex; flex-direction: column; justify-content: flex-end; }
+
+        #bookScreen { background: #5d4037; color: white; padding: 40px; box-sizing: border-box; overflow-y: auto; }
+        .book-container { background: #efebe9; color: #333; border-radius: 20px; min-height: 100%; padding: 30px; }
+        .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .book-item { background: white; border: 3px solid #ccc; border-radius: 15px; padding: 15px; text-align: center; position: relative; }
+        .book-img { width: 80px; height: 80px; image-rendering: pixelated; margin-bottom: 10px; }
+        
+        .delete-x { position: absolute; top: 5px; right: 8px; color: #ff5252; font-size: 20px; font-weight: bold; cursor: pointer; border: none; background: none; }
+        .qty-btn { width: 25px; height: 25px; cursor: pointer; background: #ddd; border: 1px solid #999; border-radius: 3px; font-weight: bold; }
+
+        #editorScreen { background: #d0e0d0; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
+        .editor-container { background: white; padding: 25px; border-radius: 20px; border: 4px solid #333; text-align: center; margin: 20px 0; }
+        #editorCanvas { border: 2px solid #999; image-rendering: pixelated; background: #fff; display: block; margin: 0 auto; }
+        .tools { margin: 15px 0; display: flex; justify-content: center; gap: 8px; align-items: center; flex-wrap: wrap; background: #f0f0f0; padding: 10px; border-radius: 10px; }
+        .btn { padding: 10px 20px; cursor: pointer; background: #2196F3; color: white; border: none; border-radius: 8px; font-weight: bold; }
+        .tool-btn { background: #eee; border: 1px solid #999; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .active-tool { background: #ffeb3b; }
