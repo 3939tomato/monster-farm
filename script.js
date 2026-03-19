@@ -334,6 +334,64 @@
             for(let i=0; i<25; i++) monsters.push(new Monster(red.p,"レッドスライム",10,20,red.url,"雑食",0,0));
         }
 
+        // --- セーブ機能とロード機能の追加 ---
+        function saveGame() {
+            const saveData = {
+                monsters: monsters.map(m => {
+                    let mData = Object.assign({}, m);
+                    delete mData.cachedAllies; // エラー回避のため循環参照を削除
+                    return mData;
+                }),
+                speciesBook: speciesBook,
+                scenery: scenery,
+                foods: foods,
+                corpses: corpses,
+                camX: camX,
+                camY: camY,
+                zoom: zoom
+            };
+            localStorage.setItem('monsterFarmSave', JSON.stringify(saveData));
+            addLog('💾 セーブしました！');
+        }
+
+        function resetGame() {
+            if(confirm("本当にセーブデータを消去して最初からやり直しますか？")) {
+                localStorage.removeItem('monsterFarmSave');
+                location.reload();
+            }
+        }
+
+        function loadGame() {
+            const saved = localStorage.getItem('monsterFarmSave');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    speciesBook = data.speciesBook || [];
+                    scenery = data.scenery || [];
+                    foods = data.foods || [];
+                    corpses = data.corpses || [];
+                    camX = data.camX !== undefined ? data.camX : (CHUNK * 4);
+                    camY = data.camY !== undefined ? data.camY : (CHUNK * 4);
+                    zoom = data.zoom || 0.3;
+                    document.getElementById('zoomSlider').value = zoom * 100;
+                    
+                    monsters = [];
+                    (data.monsters || []).forEach(m => {
+                        let newM = new Monster(m.data, m.species, 10, 10, m.artUrl, m.diet, m.heatResist, m.coldResist);
+                        Object.assign(newM, m);
+                        newM.cachedAllies = []; // 初期化
+                        monsters.push(newM);
+                    });
+                    addLog('📂 データをロードしました！');
+                } catch(e) {
+                    console.error("セーブデータの読み込みに失敗しました", e);
+                    initEnvironment(); initSlimes();
+                }
+            } else {
+                initEnvironment(); initSlimes();
+            }
+        }
+
         function mainLoop() {
             gCtx.clearRect(0,0,gCanvas.width,gCanvas.height);
             for(let x=0; x<9; x++) for(let y=0; y<9; y++) {
@@ -374,5 +432,8 @@
             document.getElementById('count').innerText = monsters.length;
             requestAnimationFrame(mainLoop);
         }
+        
         window.onresize = () => { gCanvas.width = window.innerWidth; gCanvas.height = window.innerHeight; };
-        window.onresize(); initEnvironment(); initSlimes(); mainLoop();
+        window.onresize(); 
+        loadGame(); // 初期化をloadGame()に置き換えました
+        mainLoop();
