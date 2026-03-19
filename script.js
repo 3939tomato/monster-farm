@@ -31,6 +31,11 @@
         let scenery = [], foods = [], corpses = [];
         let selectedObject = null; 
 
+        // 天候システム用変数
+        let weather = 'sunny';
+        let weatherTimer = 1800; 
+        let lightnings = [];
+
         const artData = {
             tree: { p: ['#5e3c27', '#3d994e'], d: [[0,2,2,0],[2,2,2,2],[0,1,1,0]] },
             cactus: { p: ['#2e7d32', '#1b5e20'], d: [[0,1,1,0],[1,1,1,1],[0,1,1,0]] },
@@ -91,7 +96,16 @@
                 if(rx > 80 && rx < worldW-80 && ry > 80 && ry < worldH-80) foods.push({x: rx, y: ry, type: type});
             }
         }
-        setInterval(() => { if(gameSpeed > 0) for(let i=0; i<gameSpeed; i++) spawnFoodCluster(); }, 1000);
+        
+        // 雨の日は生成速度アップ
+        setInterval(() => { 
+            if(gameSpeed > 0) {
+                for(let i=0; i<gameSpeed; i++) {
+                    spawnFoodCluster(); 
+                    if (weather === 'rain') spawnFoodCluster(); 
+                }
+            }
+        }, 1000);
 
         class Monster {
             constructor(pixelData, species, statMin, statMax, artUrl, diet, heat=0, cold=0) {
@@ -162,6 +176,13 @@
                 if (this.fightTimer > 0) { this.fightTimer--; return true; } // 戦闘中は移動・思考停止
 
                 const currentBiome = getBiome(this.x, this.y);
+                
+                // バフと天候による速度計算
+                let speedMult = 1.0;
+                if (currentBiome === this.targetBiome) speedMult *= 1.5; // 自バイオームバフ
+                if (weather === 'sunny') speedMult *= 1.2; // 晴れバフ
+                this.speed = this.speedVal * speedMult;
+
                 const isHighResist = (this.heatResist >= 20 || this.coldResist >= 20);
 
                 if (currentBiome === "desert" && this.heatResist < 15) this.hp -= 0.05;
@@ -213,8 +234,20 @@
                     this.vy = Math.sin(angle)*this.speed + (moveY/100);
                 }
                 
-                this.x = Math.max(85, Math.min(worldW-145, this.x + this.vx));
-                this.y = Math.max(85, Math.min(worldH-145, this.y + this.vy));
+                let nextX = Math.max(85, Math.min(worldW-145, this.x + this.vx));
+                let nextY = Math.max(85, Math.min(worldH-145, this.y + this.vy));
+                
+                // 山岳と海の進入制限 (体力5超かつ耐寒5超のみ)
+                let nextBiome = getBiome(nextX, nextY);
+                if ((nextBiome === 'mountain' || nextBiome === 'sea') && !(this.stamina > 5 && this.coldResist > 5)) {
+                    if (currentBiome !== 'mountain' && currentBiome !== 'sea') {
+                        nextX = this.x; // 進入をブロック
+                        nextY = this.y;
+                    }
+                }
+                
+                this.x = nextX;
+                this.y = nextY;
                 
                 if (this.breedTimer-- <= 0 && this.hunger < 40) {
                     let partner = this.cachedAllies.find(m => m.breedTimer <= 0);
@@ -369,9 +402,74 @@
             scenery.forEach(s => drawPixelArt(gCtx, s.x, s.y, artData[s.type].p, artData[s.type].d, 12));
             foods.forEach(f => drawPixelArt(gCtx, f.x, f.y, artData[f.type].p, artData[f.type].d, 6));
             corpses.forEach(c => drawPixelArt(gCtx, c.x, c.y, artData.corpse.p, artData.corpse.d, 8));
-            if(gameSpeed > 0) { for(let i=0; i<gameSpeed; i++) { monsters = monsters.filter(m => m.update()); if(newBabies.length > 0) { monsters = monsters.concat(newBabies); newBabies = []; } } }
+            
+            if(gameSpeed > 0) { 
+                for(let i=0; i<gameSpeed; i++) { 
+                    // 天候の変化
+                    weatherTimer--;
+                    if (weatherTimer <= 0) {
+                        const r = Math.random();
+                        if (r < 0.4) weather = 'sunny';
+                        else if (r < 0.7) weather = 'rain';
+                        else weather = 'storm';
+                        weatherTimer = 1800 + Math.random() * 1800;
+                        addLog(`☁️ 天候が【${weather === 'sunny' ? '晴れ' : weather === 'rain' ? '雨' : '嵐'}】に変わった！`);
+                    }
+
+                    // 嵐の時の落雷処理
+                    if (weather === 'storm' && Math.random() < 0.02) { 
+                        const lx = Math.random() * worldW;
+                        const ly = Math.random() * worldH;
+                        lightnings.push({x: lx, y: ly, timer: 15});
+                        
+                        monsters.forEach(m => {
+                            if (Math.sqrt((m.x - lx)**2 + (m.y - ly)**2) < 200) {
+                                m.hp -= 50;
+                                if (m.hp <= 0) m.die("落雷");
+                            }
+                        });
+                        
+                        foods = foods.filter(f => Math.sqrt((f.x - lx)**2 + (f.y - ly)**2) > 60);
+                    }
+
+                    monsters = monsters.filter(m => m.update()); 
+                    if(newBabies.length > 0) { monsters = monsters.concat(newBabies); newBabies = []; } 
+                } 
+            }
+            
             monsters.forEach(m => m.draw());
+            
             if(isFocus && selectedObject instanceof Monster) { camX = selectedObject.x - (gCanvas.width/2)/zoom; camY = selectedObject.y - (gCanvas.height/2)/zoom; }
+            
+            // 雷の描画
+            lightnings.forEach(l => {
+                if (l.timer > 0) {
+                    gCtx.fillStyle = `rgba(255, 255, 0, ${l.timer / 15})`;
+                    gCtx.beginPath();
+                    gCtx.arc((l.x - camX) * zoom, (l.y - camY) * zoom, 200 * zoom, 0, Math.PI * 2);
+                    gCtx.fill();
+                    gCtx.strokeStyle = `rgba(255, 255, 255, ${l.timer / 15})`;
+                    gCtx.lineWidth = 10 * zoom;
+                    gCtx.beginPath();
+                    gCtx.moveTo((l.x - camX) * zoom, (l.y - camY) * zoom);
+                    gCtx.lineTo((l.x - camX + (Math.random()-0.5)*200) * zoom, (l.y - camY - 1500) * zoom);
+                    gCtx.stroke();
+                    l.timer--;
+                }
+            });
+            lightnings = lightnings.filter(l => l.timer > 0);
+
+            // 天候の画面表示 (画面上部中央)
+            gCtx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            const textW = 120;
+            gCtx.fillRect(gCanvas.width/2 - textW/2, 20, textW, 30);
+            gCtx.fillStyle = "white";
+            gCtx.font = "bold 16px sans-serif";
+            gCtx.textAlign = "center";
+            const wText = weather === 'sunny' ? '☀️ 晴れ' : weather === 'rain' ? '🌧️ 雨' : '⚡ 嵐';
+            gCtx.fillText("天候: " + wText, gCanvas.width/2, 40);
+            gCtx.textAlign = "left"; // リセット
+
             if(selectedObject) {
                 const obj = selectedObject; tCtx.clearRect(0,0,32,32);
                 let statsHtml = "";
