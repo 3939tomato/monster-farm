@@ -130,11 +130,12 @@
                 this.exp = 0;
                 this.nextExp = 100;
 
-                // 戦闘・感情・巣作り用
+                // 戦闘・感情・巣作り・バグ防止用フラグ
                 this.fightTimer = 0;
                 this.panicTimer = 0;
                 this.carryingType = null;
                 this.emotion = "";
+                this.isDead = false; // 重複死亡バグ防止
             }
 
             gainExp(amount) {
@@ -168,11 +169,14 @@
                 this.territoryX = this.x; this.territoryY = this.y;
             }
             die(reason) {
+                if (this.isDead) return false;
+                this.isDead = true;
                 corpses.push({x:this.x, y:this.y}); 
                 addLog(`🪦 ${this.species}が${reason}で息絶えました…`);
                 return false;
             }
             update() {
+                if (this.isDead) return false;
                 this.lifeTimer--;
                 if (this.lifeTimer <= 0) return this.die("寿命");
 
@@ -218,19 +222,19 @@
 
                 if (this.socialTimer-- <= 0) {
                     this.socialTimer = 20 + Math.random() * 10;
-                    this.cachedAllies = monsters.filter(m => m !== this && m.species === this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 300);
+                    this.cachedAllies = monsters.filter(m => m !== this && !m.isDead && m.species === this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 300);
                     
                     let target = null;
                     // 縄張り防衛：巣の近くに他種族が来たら攻撃
-                    let intruder = monsters.find(m => m.species !== this.species && Math.sqrt((this.territoryX-m.x)**2+(this.territoryY-m.y)**2) < 150 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                    let intruder = monsters.find(m => m.species !== this.species && !m.isDead && Math.sqrt((this.territoryX-m.x)**2+(this.territoryY-m.y)**2) < 150 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
                     
                     if (intruder) {
                         target = intruder;
                         sleeping = false; // 敵が来たら起きる
                     } else if (!sleeping) {
                         // 通常の狩り
-                        if (this.diet === "肉食") target = monsters.find(m => m !== this && m.species !== this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-                        else if (this.diet === "雑食") target = monsters.find(m => m.diet === "草食" && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                        if (this.diet === "肉食") target = monsters.find(m => m !== this && m.species !== this.species && !m.isDead && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                        else if (this.diet === "雑食") target = monsters.find(m => m.diet === "草食" && !m.isDead && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
                     }
 
                     if (target) { 
@@ -245,7 +249,7 @@
                         if (this.hp <= 0) return this.die("返り討ち");
                     } else if (!sleeping) {
                         // 強敵が近くにいたらパニック
-                        let strongEnemy = monsters.find(m => m.species !== this.species && m.power > this.power * 1.5 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 150);
+                        let strongEnemy = monsters.find(m => m.species !== this.species && !m.isDead && m.power > this.power * 1.5 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 150);
                         if (strongEnemy) this.panicTimer = 60;
                     }
                 }
@@ -335,14 +339,23 @@
                     }
                 }
 
+                // 修正：安全にエサや死骸を食べる処理
                 if (this.hunger > 20) {
-                    corpses.forEach((c, i) => { if (Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < 50 && (this.diet!=="草食")) { this.hunger = Math.max(0, this.hunger-60); this.hp = Math.min(this.hpMax, this.hp+40); corpses.splice(i, 1); this.gainExp(50); } });
-                    foods.forEach((f, i) => { 
-                        if (Math.sqrt((this.x+30-f.x)**2+(this.y+30-f.y)**2) < 50) { 
-                            if (f.type === 'fish' && this.diet === "草食") return;
-                            this.hunger = Math.max(0, this.hunger-40); this.hp = Math.min(this.hpMax, this.hp+20); foods.splice(i, 1); this.gainExp(10);
-                        } 
-                    });
+                    let cIdx = corpses.findIndex(c => Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < 50 && this.diet !== "草食");
+                    if (cIdx !== -1) {
+                        this.hunger = Math.max(0, this.hunger-60); 
+                        this.hp = Math.min(this.hpMax, this.hp+40); 
+                        corpses.splice(cIdx, 1); 
+                        this.gainExp(50);
+                    } else {
+                        let fIdx = foods.findIndex(f => Math.sqrt((this.x+30-f.x)**2+(this.y+30-f.y)**2) < 50 && !(f.type === 'fish' && this.diet === "草食"));
+                        if (fIdx !== -1) {
+                            this.hunger = Math.max(0, this.hunger-40); 
+                            this.hp = Math.min(this.hpMax, this.hp+20); 
+                            foods.splice(fIdx, 1); 
+                            this.gainExp(10);
+                        }
+                    }
                 }
                 return true;
             }
@@ -538,6 +551,7 @@
                         lightnings.push({x: lx, y: ly, timer: 15});
                         
                         monsters.forEach(m => {
+                            if (m.isDead) return;
                             let dist = Math.sqrt((m.x - lx)**2 + (m.y - ly)**2);
                             if (dist < 200) {
                                 m.hp -= 50;
