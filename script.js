@@ -1,5 +1,5 @@
 // ==========================================
-// 1. 変数・データの初期化（ここが漏れていました）
+// 1. グローバル変数の初期化（エラー防止のため冒頭で宣言）
 // ==========================================
 let monsters = [];
 let speciesBook = [];
@@ -9,7 +9,7 @@ let corpses = [];
 let newBabies = [];
 let selectedObject = null;
 
-// BGM・SE設定
+// BGM・SE設定（エラー回避のためcatchを追加）
 const bgm = new Audio("Emerald_Grove_Drifter.mp3");
 bgm.loop = true;
 bgm.volume = 0.1;
@@ -20,25 +20,20 @@ se.volume = 0.1;
 function changeSEVolume(v) { se.volume = v; }
 function playSE() { se.currentTime = 0; se.play().catch(()=>{}); }
 
-// 最初のクリックで再生制限を解除
-window.addEventListener('mousedown', () => { if(bgm.paused) bgm.play().catch(()=>{}); }, { once: true });
-
-// UIボタンクリック時にSEを鳴らす
-window.addEventListener('click', (e) => {
-    if(e.target.tagName === 'BUTTON' || e.target.id === 'menuBtn') playSE();
-});
-
+// UI要素の取得
 const gCanvas = document.getElementById('gameCanvas');
 const gCtx = gCanvas.getContext('2d');
 const tPrev = document.getElementById('targetPreview');
 const tCtx = tPrev.getContext('2d');
+
+// 定数・システム変数
 const CHUNK = 1500;
 let worldW = CHUNK * 9, worldH = CHUNK * 9;
 let camX = CHUNK * 4, camY = CHUNK * 4, zoom = 0.3;
 let isDragging = false, lastMouseX = 0, lastMouseY = 0;
 let gameSpeed = 1, isFocus = false;
 
-// 天候・時間システム
+// 環境システム
 let weather = 'sunny';
 let weatherTimer = 1800; 
 let lightnings = [];
@@ -46,6 +41,7 @@ let raindrops = [];
 let gameTime = 0;
 let isNight = false;
 
+// ピクセルアート用色・形状データ
 const artData = {
     tree: { p: ['#5e3c27', '#3d994e'], d: [[0,2,2,0],[2,2,2,2],[0,1,1,0]] },
     cactus: { p: ['#2e7d32', '#1b5e20'], d: [[0,1,1,0],[1,1,1,1],[0,1,1,0]] },
@@ -60,12 +56,18 @@ const artData = {
     blackRock: { p: ['#212121', '#424242'], d: [[1,1,1],[1,2,1],[1,1,1]] }
 };
 
+// ==========================================
+// 2. 基本ユーティリティ関数
+// ==========================================
+
 function addLog(msg) {
     const log = document.getElementById('logPanel');
+    if(!log) return;
     const entry = document.createElement('div');
     entry.innerText = msg;
     log.appendChild(entry);
     if(log.childNodes.length > 7) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
 }
 
 function drawPixelArt(ctx, x, y, palette, data, size = 10, useCam=true) {
@@ -90,31 +92,9 @@ function getBiome(x, y) {
     return "plain";
 }
 
-function spawnFoodCluster() {
-    if (foods.length > 2500 || gameSpeed === 0) return;
-    const cx = Math.random()*worldW, cy = Math.random()*worldH;
-    const b = getBiome(cx, cy);
-    let n = 0, type = 'fruit';
-    if(b === 'mountain') { n = 1; type = 'fruit'; }
-    else if(b === 'snow') { n = 2; type = 'mushroom'; }
-    else if(b === 'desert') { n = 5; type = 'fruit'; }
-    else if(b === 'plain') { n = 20; type = Math.random() > 0.4 ? 'fruit' : 'mushroom'; }
-    else if(b === 'sea') { n = 3; type = 'fish'; }
-    for(let i=0; i<n; i++) {
-        const rx = cx + (Math.random()-0.5)*200;
-        const ry = cy + (Math.random()-0.5)*200;
-        if(rx > 80 && rx < worldW-80 && ry > 80 && ry < worldH-80) foods.push({x: rx, y: ry, type: type});
-    }
-}
-        
-setInterval(() => { 
-    if(gameSpeed > 0) {
-        for(let i=0; i<gameSpeed; i++) {
-            spawnFoodCluster(); 
-            if (weather === 'rain') spawnFoodCluster(); 
-        }
-    }
-}, 1000);
+// ==========================================
+// 3. モンスタークラス（生態・AI）
+// ==========================================
 
 class Monster {
     constructor(pixelData, species, statMin, statMax, artUrl, diet, heat=0, cold=0) {
@@ -131,51 +111,40 @@ class Monster {
         this.targetBiome = this.decideHome();
         this.initPosition();
         this.vx = 0; this.vy = 0; this.timer = 0; this.breedTimer = 1000;
-        this.socialTimer = 0; 
-        this.cachedAllies = [];
+        this.socialTimer = 0; this.cachedAllies = [];
         this.personality = this.totalStat < 30 ? "おくびょう" : "まじめ";
         this.lifeTimer = Math.floor((Math.random() * 350 + 150) * 60); 
-
-        this.level = 1;
-        this.exp = 0;
-        this.nextExp = 100;
-        this.fightTimer = 0;
-        this.panicTimer = 0;
-        this.carryingType = null;
-        this.emotion = "";
-        this.isDead = false;
-    }
-
-    gainExp(amount) {
-        this.exp += amount;
-        if (this.exp >= this.nextExp) this.levelUp();
-    }
-
-    levelUp() {
-        this.level++;
-        this.exp = 0;
-        this.nextExp = Math.floor(this.nextExp * 1.5);
-        const rand = Math.random();
-        if (rand < 0.33) this.power += 1;
-        else if (rand < 0.66) { this.speedVal += 0.1; this.speed = this.speedVal; }
-        else { this.stamina += 1; this.hpMax = this.stamina * 5 + 50; this.hp = Math.min(this.hpMax, this.hp + 20); }
-        addLog(`🆙 ${this.species}がLv${this.level}になった！`);
+        this.level = 1; this.exp = 0; this.nextExp = 100;
+        this.fightTimer = 0; this.panicTimer = 0;
+        this.carryingType = null; this.emotion = ""; this.isDead = false;
     }
 
     decideHome() {
-        if(this.heatResist >= 20 || this.heatResist > this.coldResist + 5) return "desert";
-        if(this.coldResist >= 20 || this.coldResist > this.heatResist + 5) return "snow";
+        if(this.heatResist >= 20) return "desert";
+        if(this.coldResist >= 20) return "snow";
         if(this.heatResist + this.coldResist > 30) return "mountain";
         return "plain";
     }
+
     initPosition() {
         let found = false;
         while(!found) {
-            this.x = Math.random() * (worldW-200) + 100; this.y = Math.random() * (worldH-200) + 100;
+            this.x = Math.random() * (worldW-400) + 200; 
+            this.y = Math.random() * (worldH-400) + 200;
             if(getBiome(this.x, this.y) === this.targetBiome) found = true;
         }
         this.territoryX = this.x; this.territoryY = this.y;
     }
+
+    gainExp(amount) {
+        this.exp += amount;
+        if (this.exp >= this.nextExp) {
+            this.level++; this.exp = 0; this.nextExp = Math.floor(this.nextExp * 1.5);
+            this.power += 1; this.stamina += 1; this.hpMax += 10;
+            addLog(`🆙 ${this.species}がLv${this.level}になった！`);
+        }
+    }
+
     die(reason) {
         if (this.isDead) return false;
         this.isDead = true;
@@ -183,6 +152,7 @@ class Monster {
         addLog(`🪦 ${this.species}が${reason}で息絶えました…`);
         return false;
     }
+
     update() {
         if (this.isDead) return false;
         this.lifeTimer--;
@@ -193,350 +163,274 @@ class Monster {
         if (this.fightTimer > 0) { this.fightTimer--; this.emotion = "💢"; return true; } 
 
         const currentBiome = getBiome(this.x, this.y);
-        let speedMult = 1.0;
-        if (currentBiome === this.targetBiome) speedMult *= 1.5; 
-        if (weather === 'sunny') speedMult *= 1.2; 
+        let speedMult = (currentBiome === this.targetBiome) ? 1.5 : 1.0;
         if (this.panicTimer > 0) speedMult *= 1.5;
         this.speed = this.speedVal * speedMult;
 
-        const isHighResist = (this.heatResist >= 20 || this.coldResist >= 20);
+        // 環境ダメージ
         if (currentBiome === "desert" && this.heatResist < 15) this.hp -= 0.05;
         if (currentBiome === "snow" && this.coldResist < 15) this.hp -= 0.05;
-        if (currentBiome === "plain" && isHighResist) this.hp -= 0.1;
-        this.hunger += (this.diet === "草食") ? 0.01 : 0.015;
+        this.hunger += 0.012;
         if (this.hunger > 100) { this.hp -= 0.2; if (this.hp <= 0) return this.die("餓死"); }
         if (this.hp <= 0) return this.die("衰弱");
 
         let distToNest = Math.sqrt((this.x - this.territoryX)**2 + (this.y - this.territoryY)**2);
         let sleeping = false;
         if (isNight || this.hp < this.hpMax * 0.3) {
-            if (distToNest < 50) {
-                sleeping = true;
-                this.hp = Math.min(this.hpMax, this.hp + 0.05);
-                this.emotion = "💤";
+            if (distToNest < 60) {
+                sleeping = true; this.hp = Math.min(this.hpMax, this.hp + 0.1); this.emotion = "💤";
             }
         }
 
-        if (this.emotion === "") {
-            if (this.breedTimer <= 0 && this.hunger < 40) this.emotion = "❤️";
-            else if (this.hunger > 50) this.emotion = "🍖";
-        }
-
-        if (this.socialTimer-- <= 0) {
-            this.socialTimer = 20 + Math.random() * 10;
-            this.cachedAllies = monsters.filter(m => m !== this && !m.isDead && m.species === this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 300);
-            
-            let target = null;
-            let intruder = monsters.find(m => m.species !== this.species && !m.isDead && Math.sqrt((this.territoryX-m.x)**2+(this.territoryY-m.y)**2) < 150 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-            
-            if (intruder) {
-                target = intruder;
-                sleeping = false;
-            } else if (!sleeping) {
-                if (this.diet === "肉食") target = monsters.find(m => m !== this && m.species !== this.species && !m.isDead && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-                else if (this.diet === "雑食") target = monsters.find(m => m.diet === "草食" && !m.isDead && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-            }
-
-            if (target) { 
-                target.hp -= (this.power / 10) + 1; 
-                this.hp -= (target.power / 20) + 0.5; 
-                this.fightTimer = 60; 
-                target.fightTimer = 60;
-                this.vx = 0; this.vy = 0; 
-                this.emotion = "💢";
-                target.emotion = "💢";
-                if (target.hp <= 0) { target.die("捕食"); this.gainExp(50); }
-                if (this.hp <= 0) return this.die("返り討ち");
-            } else if (!sleeping) {
-                let strongEnemy = monsters.find(m => m.species !== this.species && !m.isDead && m.power > this.power * 1.5 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 150);
-                if (strongEnemy) this.panicTimer = 60;
-            }
-        }
-
+        // AI思考（移動・捕食・逃走）
         if (this.timer-- <= 0 && !sleeping) {
-            this.timer = 80 + Math.random()*60;
-            let moveX = 0, moveY = 0;
-            if (this.cachedAllies.length > 0) {
-                let ax = this.cachedAllies.reduce((s, a) => s + a.x, 0) / this.cachedAllies.length;
-                let ay = this.cachedAllies.reduce((s, a) => s + a.y, 0) / this.cachedAllies.length;
-                moveX += (ax - this.x) * 0.1; moveY += (ay - this.y) * 0.1;
-            }
-            let searchDist = 400;
-            let food = foods.find(f => (f.type !== 'fish' || this.diet !== "草食") && Math.sqrt((this.x-f.x)**2+(this.y-f.y)**2) < searchDist);
-            let corpse = corpses.find(c => Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < searchDist && this.diet !== "草食");
+            this.timer = 60 + Math.random()*60;
             let angle;
-            
             if (this.panicTimer > 0) {
                 angle = Math.random() * Math.PI * 2;
-            } else if (this.carryingType) {
-                if (distToNest < 40) {
-                    if (this.carryingType === 'corpse') corpses.push({x: this.territoryX + (Math.random()-0.5)*40, y: this.territoryY + (Math.random()-0.5)*40});
-                    else foods.push({x: this.territoryX + (Math.random()-0.5)*40, y: this.territoryY + (Math.random()-0.5)*40, type: this.carryingType});
-                    this.carryingType = null;
-                    angle = Math.random()*Math.PI*2;
-                } else {
-                    angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
-                }
-            } else if (isNight) {
-                angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
-            } else if (this.hunger <= 20 && distToNest > 100 && (food || corpse)) {
-                let t = corpse ? corpse : food;
-                if (Math.sqrt((this.x-t.x)**2+(this.y-t.y)**2) < 30) {
-                    if (corpse) {
-                        let idx = corpses.indexOf(corpse);
-                        if(idx !== -1) { corpses.splice(idx, 1); this.carryingType = 'corpse'; }
-                    } else {
-                        let idx = foods.indexOf(t);
-                        if(idx !== -1) { foods.splice(idx, 1); this.carryingType = t.type; }
-                    }
-                    angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
-                } else {
-                    angle = Math.atan2(t.y - this.y, t.x - this.x);
-                }
-            } else if (food && this.hunger > 10) {
-                angle = Math.atan2(food.y - this.y, food.x - this.x);
-            } else if (currentBiome !== this.targetBiome) {
-                angle = Math.atan2(this.territoryY - this.y + moveY, this.territoryX - this.x + moveX);
+            } else if (this.hunger > 40) {
+                let food = foods.find(f => Math.sqrt((this.x-f.x)**2+(this.y-f.y)**2) < 500);
+                angle = food ? Math.atan2(food.y - this.y, food.x - this.x) : Math.random()*Math.PI*2;
             } else {
-                angle = Math.random()*Math.PI*2;
+                angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x) + (Math.random()-0.5);
             }
-            this.vx = Math.cos(angle)*this.speed + (moveX/100); 
-            this.vy = Math.sin(angle)*this.speed + (moveY/100);
+            this.vx = Math.cos(angle)*this.speed; 
+            this.vy = Math.sin(angle)*this.speed;
         }
         
         if (sleeping) { this.vx = 0; this.vy = 0; }
+        this.x = Math.max(100, Math.min(worldW-100, this.x + this.vx));
+        this.y = Math.max(100, Math.min(worldH-100, this.y + this.vy));
         
-        let nextX = Math.max(85, Math.min(worldW-145, this.x + this.vx));
-        let nextY = Math.max(85, Math.min(worldH-145, this.y + this.vy));
-        this.x = nextX;
-        this.y = nextY;
-        
-        if (this.breedTimer-- <= 0 && this.hunger < 40) {
-            let partner = this.cachedAllies.find(m => m.breedTimer <= 0);
-            if (partner && Math.sqrt((this.x-partner.x)**2+(this.y-partner.y)**2) < 60) {
-                const avg = (this.totalStat + partner.totalStat)/2;
-                let ch = this.heatResist, cc = this.coldResist;
-                if (currentBiome === "desert") ch += 1; if (currentBiome === "snow") cc += 1;
-                const child = new Monster(this.data, this.species, avg*0.9, avg*1.1, this.artUrl, this.diet, ch, cc);
+        // 繁殖
+        if (this.breedTimer-- <= 0 && this.hunger < 30 && !isNight) {
+            let partner = monsters.find(m => m !== this && m.species === this.species && m.breedTimer <= 0 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+            if (partner) {
+                const child = new Monster(this.data, this.species, this.totalStat*0.8, this.totalStat*1.2, this.artUrl, this.diet, this.heatResist, this.coldResist);
                 child.x = this.x; child.y = this.y; newBabies.push(child);
-                this.breedTimer = 3000; partner.breedTimer = 3000;
+                this.breedTimer = 5000; partner.breedTimer = 5000;
                 addLog(`🐣 ${this.species}が誕生！`);
             }
         }
 
-        if (this.hunger > 20) {
-            let cIdx = corpses.findIndex(c => Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < 50 && this.diet !== "草食");
-            if (cIdx !== -1) {
-                this.hunger = Math.max(0, this.hunger-60); 
-                this.hp = Math.min(this.hpMax, this.hp+40); 
-                corpses.splice(cIdx, 1); 
-                this.gainExp(50);
-            } else {
-                let fIdx = foods.findIndex(f => Math.sqrt((this.x+30-f.x)**2+(this.y+30-f.y)**2) < 50 && !(f.type === 'fish' && this.diet === "草食"));
-                if (fIdx !== -1) {
-                    this.hunger = Math.max(0, this.hunger-40); 
-                    this.hp = Math.min(this.hpMax, this.hp+20); 
-                    foods.splice(fIdx, 1); 
-                    this.gainExp(10);
-                }
-            }
+        // 食事判定
+        let fIdx = foods.findIndex(f => Math.sqrt((this.x-f.x)**2+(this.y-f.y)**2) < 40);
+        if (fIdx !== -1) {
+            this.hunger = Math.max(0, this.hunger-40); this.hp = Math.min(this.hpMax, this.hp+20);
+            foods.splice(fIdx, 1); this.gainExp(10);
         }
+
         return true;
     }
+
     draw() {
         let sx = (this.x - camX) * zoom, sy = (this.y - camY) * zoom;
         if (sx < -100 || sx > gCanvas.width + 100 || sy < -100 || sy > gCanvas.height + 100) return;
-        if (this.fightTimer > 0 || this.panicTimer > 0) {
-            sx += (Math.random() - 0.5) * 10 * zoom;
-            sy += (Math.random() - 0.5) * 10 * zoom;
-        }
-        const displaySize = 60 + (this.level - 1) * 4;
+        const displaySize = 60 + (this.level - 1) * 3;
         const s = (displaySize/32)*zoom;
         for(let y=0; y<32; y++) for(let x=0; x<32; x++) if(this.data[y][x]){ gCtx.fillStyle = this.data[y][x]; gCtx.fillRect(sx+x*s, sy+y*s, s+1, s+1); }
-        if (selectedObject === this) { gCtx.strokeStyle = "yellow"; gCtx.lineWidth = 3; gCtx.strokeRect(sx, sy, displaySize*zoom, displaySize*zoom); }
+        if (selectedObject === this) { gCtx.strokeStyle = "yellow"; gCtx.lineWidth = 3; gCtx.strokeRect(sx-5, sy-5, (displaySize+10)*zoom, (displaySize+10)*zoom); }
         if (this.emotion) {
-            gCtx.font = `${20 * zoom}px sans-serif`;
-            gCtx.textAlign = "center";
-            gCtx.fillText(this.emotion, sx + (displaySize/2)*zoom, sy - 5*zoom);
-            gCtx.textAlign = "left";
-        }
-        if (this.carryingType) {
-            let art = this.carryingType === 'corpse' ? artData.corpse : artData[this.carryingType];
-            if (art) drawPixelArt(gCtx, this.x + 20, this.y - 15, art.p, art.d, 5, true);
+            gCtx.font = `${24 * zoom}px sans-serif`;
+            gCtx.fillText(this.emotion, sx + (displaySize/4)*zoom, sy - 5*zoom);
         }
     }
 }
 
+// ==========================================
+// 4. UI・操作系イベント
+// ==========================================
+
 gCanvas.addEventListener('mousedown', (e) => {
     isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY;
     const mx = (e.clientX / zoom) + camX, my = (e.clientY / zoom) + camY;
-    let found = monsters.find(m => { const size = 60 + (m.level - 1) * 4; return mx > m.x && mx < m.x+size && my > m.y && my < m.y+size; });
-    if(!found) found = foods.find(f => Math.sqrt((mx-f.x)**2 + (my-f.y)**2) < 40);
-    if(!found) found = corpses.find(c => Math.sqrt((mx-c.x)**2 + (my-c.y)**2) < 40);
-    selectedObject = found;
+    selectedObject = monsters.find(m => mx > m.x && mx < m.x+80 && my > m.y && my < m.y+80) ||
+                     foods.find(f => Math.sqrt((mx-f.x)**2 + (my-f.y)**2) < 50);
     document.getElementById('targetMonitor').style.display = selectedObject ? 'block' : 'none';
 });
-window.addEventListener('mousemove', (e) => { if(isDragging && !isFocus){ camX-=(e.clientX-lastMouseX)/zoom; camY-=(e.clientY-lastMouseY)/zoom; } lastMouseX=e.clientX; lastMouseY=e.clientY; });
+
+window.addEventListener('mousemove', (e) => { 
+    if(isDragging && !isFocus){ camX-=(e.clientX-lastMouseX)/zoom; camY-=(e.clientY-lastMouseY)/zoom; } 
+    lastMouseX=e.clientX; lastMouseY=e.clientY; 
+});
+
 window.addEventListener('mouseup', () => isDragging = false);
-window.addEventListener('wheel', (e) => { e.preventDefault(); const mx = e.clientX, my = e.clientY; const worldX = mx / zoom + camX, worldY = my / zoom + camY; zoom *= e.deltaY > 0 ? 0.9 : 1.1; zoom = Math.max(0.01, Math.min(3.0, zoom)); camX = worldX - mx / zoom; camY = worldY - my / zoom; document.getElementById('zoomSlider').value = zoom * 100; }, {passive:false});
 
-function handleSliderZoom(v) { const cx = gCanvas.width / 2, cy = gCanvas.height / 2; const worldX = cx / zoom + camX, worldY = cy / zoom + camY; zoom = v / 100; camX = worldX - cx / zoom; camY = worldY - cy / zoom; }
+window.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const mx = e.clientX, my = e.clientY;
+    const worldX = mx / zoom + camX, worldY = my / zoom + camY;
+    zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+    zoom = Math.max(0.05, Math.min(3.0, zoom));
+    camX = worldX - mx / zoom;
+    camY = worldY - my / zoom;
+    document.getElementById('zoomSlider').value = zoom * 100;
+}, {passive:false});
+
+// HTML側から呼ばれる関数群
+function handleSliderZoom(v) { zoom = v / 100; }
 function setGameSpeed(s, b) { gameSpeed = s; document.querySelectorAll('.speed-btn').forEach(btn=>btn.classList.remove('active-speed')); b.classList.add('active-speed'); }
-function toggleFocus() { isFocus = !isFocus; document.getElementById('focusBtn').classList.toggle('active-focus'); document.getElementById('focusBtn').innerText = isFocus ? "注目追従: ON" : "注目追従: OFF"; }
+function toggleFocus() { isFocus = !isFocus; document.getElementById('focusBtn').classList.toggle('active-focus'); }
+function toggleMenu() { const p = document.getElementById('menuPanel'); p.style.display = p.style.display === 'flex' ? 'none' : 'flex'; }
 
+// エディター関連
+let currentTool = 'pen', pixels = Array(32).fill().map(()=>Array(32).fill(null)), drawing = false;
+const edCanvas = document.getElementById('editorCanvas'), edCtx = edCanvas.getContext('2d');
+
+function openEditor() { 
+    document.getElementById('farmScreen').classList.remove('active'); 
+    document.getElementById('editorScreen').classList.add('active'); 
+    drawEd(); 
+}
+function closeEditor() { 
+    document.getElementById('editorScreen').classList.remove('active'); 
+    document.getElementById('farmScreen').classList.add('active'); 
+}
+function setTool(t) { currentTool = t; }
+function clearEd() { pixels = Array(32).fill().map(()=>Array(32).fill(null)); drawEd(); }
+function drawEd() {
+    edCtx.clearRect(0,0,320,320);
+    pixels.forEach((row,y)=>row.forEach((c,x)=>{
+        if(c){ edCtx.fillStyle=c; edCtx.fillRect(x*10,y*10,10,10); }
+        edCtx.strokeStyle="#ddd"; edCtx.strokeRect(x*10,y*10,10,10);
+    }));
+}
+
+edCanvas.onmousedown = (e) => { drawing = true; paint(e); };
+edCanvas.onmousemove = (e) => { if(drawing) paint(e); };
+window.onmouseup = () => drawing = false;
+
+function paint(e) {
+    const rect = edCanvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / 10), y = Math.floor((e.clientY - rect.top) / 10);
+    if(x<0 || x>=32 || y<0 || y>=32) return;
+    pixels[y][x] = currentTool === 'eraser' ? null : document.getElementById('colorPicker').value;
+    drawEd();
+}
+
+function saveAndGoFarm() {
+    const s = document.getElementById('speciesInput').value || "不明な種";
+    const d = document.getElementById('dietInput').value;
+    const h = parseInt(document.getElementById('heatResist').value) || 0;
+    const c = parseInt(document.getElementById('coldResist').value) || 0;
+    const count = parseInt(document.getElementById('spawnCount').value) || 5;
+    
+    const tempC = document.createElement('canvas'); tempC.width=32; tempC.height=32;
+    const tctx = tempC.getContext('2d');
+    pixels.forEach((row,y)=>row.forEach((col,x)=>{if(col){tctx.fillStyle=col; tctx.fillRect(x,y,1,1);}}));
+    const url = tempC.toDataURL();
+
+    speciesBook.push({name:s, url, pixels:JSON.parse(JSON.stringify(pixels)), mi:20, ma:40, diet:d, h, c, count});
+    for(let i=0; i<count; i++) monsters.push(new Monster(pixels, s, 20, 40, url, d, h, c));
+    
+    addLog(`✨ ${s}を放流しました！`);
+    closeEditor();
+}
+
+// 図鑑関連
 function openBook() {
     document.getElementById('farmScreen').classList.remove('active');
     document.getElementById('bookScreen').classList.add('active');
     const grid = document.getElementById('bookGrid'); grid.innerHTML = '';
     speciesBook.forEach((s, i) => {
-        const currentCount = monsters.filter(m => m.species === s.name).length;
         grid.innerHTML += `<div class="book-item">
-            <button class="delete-x" onclick="deleteSpecies(${i})">×</button>
-            <img src="${s.url}" class="book-img"><br>
-            <b>${s.name}</b><br>生存数: ${currentCount}<br>
-            放流: <button class="qty-btn" onclick="changeQty(${i}, -1)">-</button><span>${s.count}</span><button class="qty-btn" onclick="changeQty(${i}, 1)">+</button><br>
-            <button onclick="spawnMore(${i})" class="btn" style="padding:5px 10px; font-size:11px; margin-top:5px;">追加放流</button>
+            <img src="${s.url}" style="width:50px;"><br><b>${s.name}</b><br>
+            <button onclick="deleteSpecies(${i})">削除</button>
         </div>`;
     });
 }
-
-let currentTool = 'pen', pixels = Array(32).fill().map(()=>Array(32).fill(null)), drawing = false;
-const edCanvas = document.getElementById('editorCanvas'), edCtx = edCanvas.getContext('2d');
-function setTool(t) { currentTool = t; document.querySelectorAll('.tool-btn').forEach(b=>b.classList.remove('active-tool')); document.getElementById(t+'Tool').classList.add('active-tool'); }
-function drawEd() { edCtx.clearRect(0,0,320,320); pixels.forEach((row,y)=>row.forEach((c,x)=>{ if(c){ edCtx.fillStyle=c; edCtx.fillRect(x*10,y*10,10,10); } edCtx.strokeStyle="#ddd"; edCtx.strokeRect(x*10,y*10,10,10); })); }
-function validateResist() { const h = parseInt(document.getElementById('heatResist').value)||0, c = parseInt(document.getElementById('coldResist').value)||0; if(h+c > 50) { document.getElementById('resistError').innerText = "耐性合計は50まで！"; return false; } document.getElementById('resistError').innerText = ""; return true; }
-function saveAndGoFarm() { if(!validateResist()) return; const s = document.getElementById('speciesInput').value, d = document.getElementById('dietInput').value; const h = parseInt(document.getElementById('heatResist').value), c = parseInt(document.getElementById('coldResist').value); const mi = parseInt(document.getElementById('statMin').value), ma = parseInt(document.getElementById('statMax').value); const count = parseInt(document.getElementById('spawnCount').value); const tempC = document.createElement('canvas'); tempC.width=32; tempC.height=32; const tctx = tempC.getContext('2d'); pixels.forEach((row,y)=>row.forEach((col,x)=>{if(col){tctx.fillStyle=col; tctx.fillRect(x,y,1,1);}})); const url = tempC.toDataURL(); speciesBook.push({name:s, url, pixels:JSON.parse(JSON.stringify(pixels)), mi, ma, diet:d, h, c, count}); for(let i=0; i<count; i++) monsters.push(new Monster(pixels, s, mi, ma, url, d, h, c)); addLog(`✨ ${s}を放流！`); closeEditor(); }
-function deleteSpecies(index) { const name = speciesBook[index].name; monsters = monsters.filter(m => m.species !== name); speciesBook.splice(index, 1); openBook(); }
-function spawnMore(index) { const s = speciesBook[index]; for(let i=0; i<s.count; i++) monsters.push(new Monster(s.pixels, s.name, s.mi, s.ma, s.url, s.diet, s.h, s.c)); }
-function changeQty(index, delta) { speciesBook[index].count = Math.max(1, (speciesBook[index].count || 1) + delta); openBook(); }
 function closeBook() { document.getElementById('bookScreen').classList.remove('active'); document.getElementById('farmScreen').classList.add('active'); }
-function openEditor() { document.getElementById('farmScreen').classList.remove('active'); document.getElementById('editorScreen').classList.add('active'); drawEd(); }
-function closeEditor() { document.getElementById('editorScreen').classList.remove('active'); document.getElementById('farmScreen').classList.add('active'); }
-function toggleMenu() { const p = document.getElementById('menuPanel'); p.style.display = p.style.display === 'flex' ? 'none' : 'flex'; }
-edCanvas.onmousedown = (e) => { drawing = true; paint(e); }; window.onmouseup = () => drawing = false; edCanvas.onmousemove = (e) => { if(drawing) paint(e); };
-function paint(e) { const rect = edCanvas.getBoundingClientRect(); const x = Math.floor((e.clientX - rect.left) / 10), y = Math.floor((e.clientY - rect.top) / 10); if(x<0 || x>=32 || y<0 || y>=32) return; const color = currentTool==='eraser' ? null : document.getElementById('colorPicker').value; const bSize = parseInt(document.getElementById('brushSize').value); if(currentTool==='bucket') { const target = pixels[y][x]; if(target===color) return; const fill = (cx,cy)=>{ if(cx<0||cx>=32||cy<0||cy>=32||pixels[cy][cx]!==target)return; pixels[cy][cx]=color; fill(cx+1,cy); fill(cx-1,cy); fill(cx,cy+1); fill(cx,cy-1);}; fill(x,y); } else { for(let i=0; i<bSize; i++) for(let j=0; j<bSize; j++) if(y+i<32 && x+j<32) pixels[y+i][x+j] = color; } drawEd(); }
-function clearEd() { pixels = Array(32).fill().map(()=>Array(32).fill(null)); drawEd(); }
+function deleteSpecies(i) { speciesBook.splice(i, 1); openBook(); }
 
-function initEnvironment() {
-    scenery = [];
-    for(let x=0; x<worldW; x+=40) { scenery.push({x: x, y: 0, type:'blackRock'}); scenery.push({x: x, y: worldH-80, type:'blackRock'}); }
-    for(let y=0; y<worldH; y+=40) { scenery.push({x: 0, y: y, type:'blackRock'}); scenery.push({x: worldW-80, y: y, type:'blackRock'}); }
-    for(let i=0; i<2000; i++) {
-        const rx = 100 + Math.random()*(worldW-200), ry = 100 + Math.random()*(worldH-200);
-        const b = getBiome(rx, ry); if(b === 'sea') continue;
-        let type = 'tree'; if(b==='desert') type='cactus'; if(b==='snow') type='ice'; if(b==='mountain') type='ore';
-        scenery.push({x: rx, y: ry, type});
-    }
-    for(let i=0; i<100; i++) spawnFoodCluster();
-}
+// ==========================================
+// 5. システムコア（セーブ・ループ）
+// ==========================================
 
-function initSlimes() {
-    const shape = [[0,1,1,1,0],[1,1,1,1,1],[1,2,1,2,1],[1,1,1,1,1]];
-    const getSlimeData = (c) => {
-        let p = Array(32).fill().map(()=>Array(32).fill(null));
-        shape.forEach((r,y)=>r.forEach((v,x)=>{if(v===1)p[y+14][x+14]=c; if(v===2)p[y+14][x+14]="#fff";}));
-        const can = document.createElement('canvas'); can.width=32; can.height=32; const ctx = can.getContext('2d');
-        p.forEach((row,py)=>row.forEach((col,px)=>{if(col){ctx.fillStyle=col; ctx.fillRect(px,py,1,1);}}));
-        return {p, url: can.toDataURL()};
-    };
-    const blue = getSlimeData("#42a5f5"), red = getSlimeData("#ef5350");
-    speciesBook.push({name:"ブルースライム",url:blue.url,pixels:blue.p,mi:10,ma:20,diet:"雑食",h:0,c:0,count:15});
-    speciesBook.push({name:"レッドスライム",url:red.url,pixels:red.p,mi:10,ma:20,diet:"雑食",h:0,c:0,count:25});
-    for(let i=0; i<15; i++) monsters.push(new Monster(blue.p,"ブルースライム",10,20,blue.url,"雑食",0,0));
-    for(let i=0; i<25; i++) monsters.push(new Monster(red.p,"レッドスライム",10,20,red.url,"雑食",0,0));
+function spawnFoodCluster() {
+    if (foods.length > 1500) return;
+    const rx = Math.random()*worldW, ry = Math.random()*worldH;
+    const b = getBiome(rx, ry);
+    let type = (b==='sea')?'fish':(b==='desert')?'fruit':(b==='snow')?'mushroom':'fruit';
+    foods.push({x: rx, y: ry, type: type});
 }
 
 function saveGame() {
-    const saveData = { monsters: monsters.map(m => { let mData = Object.assign({}, m); delete mData.cachedAllies; return mData; }), speciesBook, scenery, foods, corpses, camX, camY, zoom, gameTime };
-    localStorage.setItem('monsterFarmSave', JSON.stringify(saveData));
-    addLog('💾 セーブしました！');
+    const data = { monsters, speciesBook, scenery, foods, gameTime, camX, camY, zoom };
+    localStorage.setItem('monsterFarmSave', JSON.stringify(data));
+    addLog('💾 セーブ完了');
 }
-function resetGame() { if(confirm("本当にリセットしますか？")) { localStorage.removeItem('monsterFarmSave'); location.reload(); } }
+
 function loadGame() {
     const saved = localStorage.getItem('monsterFarmSave');
     if (saved) {
-        try {
-            const data = JSON.parse(saved);
-            speciesBook = data.speciesBook || []; scenery = data.scenery || []; foods = data.foods || []; corpses = data.corpses || []; camX = data.camX; camY = data.camY; zoom = data.zoom || 0.3; gameTime = data.gameTime || 0;
-            document.getElementById('zoomSlider').value = zoom * 100;
-            monsters = (data.monsters || []).map(m => { let newM = new Monster(m.data, m.species, 10, 10, m.artUrl, m.diet, m.heatResist, m.coldResist); Object.assign(newM, m); newM.cachedAllies = []; return newM; });
-            addLog('📂 ロード完了！');
-        } catch(e) { initEnvironment(); initSlimes(); }
-    } else { initEnvironment(); initSlimes(); }
+        const d = JSON.parse(saved);
+        speciesBook = d.speciesBook || [];
+        scenery = d.scenery || [];
+        foods = d.foods || [];
+        monsters = (d.monsters || []).map(m => {
+            let n = new Monster(m.data, m.species, 10, 10, m.artUrl, m.diet, m.heatResist, m.coldResist);
+            Object.assign(n, m); return n;
+        });
+        addLog('📂 ロード完了');
+    } else {
+        initEnvironment();
+    }
+}
+
+function resetGame() { if(confirm("初期化しますか？")) { localStorage.removeItem('monsterFarmSave'); location.reload(); } }
+
+function initEnvironment() {
+    for(let i=0; i<1500; i++) {
+        const rx = Math.random()*worldW, ry = Math.random()*worldH;
+        const b = getBiome(rx, ry);
+        let type = (b==='desert')?'cactus':(b==='snow')?'ice':(b==='mountain')?'ore':'tree';
+        scenery.push({x: rx, y: ry, type});
+    }
+    for(let i=0; i<300; i++) spawnFoodCluster();
 }
 
 function mainLoop() {
     gCtx.clearRect(0,0,gCanvas.width,gCanvas.height);
+    
+    // 背景描画
     for(let x=0; x<9; x++) for(let y=0; y<9; y++) {
         const b = getBiome(x*CHUNK+1, y*CHUNK+1);
         gCtx.fillStyle = b==='desert'?"#f0e68c":b==='snow'?"#e0ffff":b==='mountain'?"#9e9e9e":b==='sea'?"#2196F3":"#7cc77c";
-        gCtx.fillRect((x*CHUNK-camX)*zoom, (y*CHUNK-camY)*zoom, CHUNK*zoom, CHUNK*zoom);
+        gCtx.fillRect((x*CHUNK-camX)*zoom, (y*CHUNK-camY)*zoom, CHUNK*zoom+1, CHUNK*zoom+1);
     }
+
     scenery.forEach(s => drawPixelArt(gCtx, s.x, s.y, artData[s.type].p, artData[s.type].d, 12));
     foods.forEach(f => drawPixelArt(gCtx, f.x, f.y, artData[f.type].p, artData[f.type].d, 6));
-    corpses.forEach(c => drawPixelArt(gCtx, c.x, c.y, artData.corpse.p, artData.corpse.d, 8));
     
-    if(gameSpeed > 0) { 
-        for(let i=0; i<gameSpeed; i++) { 
-            gameTime++;
-            isNight = (gameTime % 4800) > 2400;
-            weatherTimer--;
-            if (weatherTimer <= 0) {
-                const r = Math.random();
-                if (r < 0.4) weather = 'sunny';
-                else if (r < 0.7) weather = 'rain';
-                else weather = 'storm';
-                weatherTimer = 1800 + Math.random() * 1800;
-                addLog(`☁️ 天候が【${weather === 'sunny' ? '晴れ' : weather === 'rain' ? '雨' : '嵐'}】に！`);
-            }
-            if (weather === 'storm' && Math.random() < 0.02) { 
-                const lx = Math.random() * worldW; const ly = Math.random() * worldH;
-                lightnings.push({x: lx, y: ly, timer: 15});
-                monsters.forEach(m => {
-                    if (m.isDead) return;
-                    let dist = Math.sqrt((m.x - lx)**2 + (m.y - ly)**2);
-                    if (dist < 200) { m.hp -= 50; if (m.hp <= 0) m.die("落雷"); else m.panicTimer = 60; }
-                });
-            }
-            monsters = monsters.filter(m => m.update()); 
-            if(newBabies.length > 0) { monsters = monsters.concat(newBabies); newBabies = []; } 
-        } 
+    if(gameSpeed > 0) {
+        gameTime++; isNight = (gameTime % 4000) > 2000;
+        if(Math.random() < 0.05) spawnFoodCluster();
+        monsters = monsters.filter(m => m.update());
+        if(newBabies.length > 0) { monsters = monsters.concat(newBabies); newBabies = []; }
     }
-    monsters.forEach(m => m.draw());
-    if(isFocus && selectedObject instanceof Monster) { camX = selectedObject.x - (gCanvas.width/2)/zoom; camY = selectedObject.y - (gCanvas.height/2)/zoom; }
-    if (isNight) { gCtx.fillStyle = "rgba(0, 0, 15, 0.4)"; gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height); }
-    if (weather === 'rain' || weather === 'storm') {
-        gCtx.fillStyle = weather === 'storm' ? "rgba(0, 0, 0, 0.4)" : "rgba(0, 0, 0, 0.2)";
-        gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height);
-        if (gameSpeed > 0) { for(let i=0; i<(weather === 'storm' ? 5 : 2) * gameSpeed; i++) raindrops.push({ x: Math.random() * gCanvas.width, y: -20, l: Math.random() * 20 + 10, v: Math.random() * 10 + 15 }); }
-        gCtx.strokeStyle = "rgba(174, 194, 224, 0.5)"; gCtx.lineWidth = 2; gCtx.beginPath();
-        raindrops.forEach(r => { gCtx.moveTo(r.x, r.y); gCtx.lineTo(r.x - r.l * 0.3, r.y + r.l); if (gameSpeed > 0) { r.x -= r.v * 0.3 * gameSpeed; r.y += r.v * gameSpeed; } });
-        gCtx.stroke(); raindrops = raindrops.filter(r => r.y < gCanvas.height && r.x > -50);
-    }
-    lightnings.forEach(l => {
-        if (l.timer > 0) {
-            gCtx.fillStyle = `rgba(255, 255, 0, ${l.timer / 15})`; gCtx.beginPath(); gCtx.arc((l.x - camX) * zoom, (l.y - camY) * zoom, 200 * zoom, 0, Math.PI * 2); gCtx.fill();
-            l.timer--;
-        }
-    });
-    lightnings = lightnings.filter(l => l.timer > 0);
-    gCtx.fillStyle = "rgba(0, 0, 0, 0.7)"; gCtx.fillRect(gCanvas.width/2 - 90, 20, 180, 30);
-    gCtx.fillStyle = "white"; gCtx.font = "bold 16px sans-serif"; gCtx.textAlign = "center";
-    gCtx.fillText("天候: " + (weather === 'sunny' ? '☀️' : weather === 'rain' ? '🌧️' : '⚡') + " | " + (isNight ? '🌙' : '☀️'), gCanvas.width/2, 40);
-    gCtx.textAlign = "left";
 
+    monsters.forEach(m => m.draw());
+
+    if(isFocus && selectedObject instanceof Monster) {
+        camX = selectedObject.x - (gCanvas.width/2)/zoom;
+        camY = selectedObject.y - (gCanvas.height/2)/zoom;
+    }
+
+    // 夜間オーバーレイ
+    if (isNight) { gCtx.fillStyle = "rgba(0, 0, 40, 0.3)"; gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height); }
+
+    // モニター更新
     if(selectedObject) {
-        const obj = selectedObject; tCtx.clearRect(0,0,32,32);
-        let statsHtml = "";
-        if(obj instanceof Monster) {
-            obj.data.forEach((row,y)=>row.forEach((c,x)=>{if(c){tCtx.fillStyle=c; tCtx.fillRect(x,y,1,1);}}));
-            statsHtml = `<b>${obj.species}</b><br>Lv ${obj.level}<br>HP: ${Math.floor(obj.hp)} / ${Math.floor(obj.hpMax)}<br>空腹: ${Math.floor(obj.hunger)}%`;
-        } else if(obj.type) { drawPixelArt(tCtx, 4, 4, artData[obj.type].p, artData[obj.type].d, 6, false); statsHtml = `<b>${obj.type}</b> (エサ)`; }
-        else { drawPixelArt(tCtx, 4, 4, artData.corpse.p, artData.corpse.d, 6, false); statsHtml = `<b>なきがら</b>`; }
-        document.getElementById('targetStats').innerHTML = statsHtml;
+        const obj = selectedObject;
+        let stats = obj.species ? `<b>${obj.species}</b><br>HP: ${Math.floor(obj.hp)}<br>空腹: ${Math.floor(obj.hunger)}%` : `<b>${obj.type}</b>`;
+        document.getElementById('targetStats').innerHTML = stats;
     }
     document.getElementById('count').innerText = monsters.length;
+
     requestAnimationFrame(mainLoop);
 }
+
 window.onresize = () => { gCanvas.width = window.innerWidth; gCanvas.height = window.innerHeight; };
-window.onresize(); loadGame(); mainLoop();
+window.onresize();
+loadGame();
+mainLoop();
