@@ -534,3 +534,50 @@
         }
         window.onresize = () => { gCanvas.width = window.innerWidth; gCanvas.height = window.innerHeight; };
         window.onresize(); loadGame(); mainLoop();
+
+// ==========================================
+// 拡張パック：自動清掃・エラーガード・ショートカット
+// ==========================================
+
+// 1. パフォーマンス維持：増えすぎた死体やエサを自動で片付ける（30秒周期）
+// 長時間放置してもブラウザが重くなるのを防ぎます
+setInterval(() => {
+    if (typeof corpses !== 'undefined' && corpses.length > 50) {
+        corpses.splice(0, corpses.length - 50); // 古い死体から順に削除
+    }
+    if (typeof foods !== 'undefined' && foods.length > 1500) {
+        foods.splice(0, 300); // 溜まりすぎたエサを古い順に間引く
+    }
+}, 30000);
+
+// 2. クラッシュ防止：万が一変数が宣言されていなかった場合の自動補完
+// 過去のコードとの不整合で発生する「undefinedエラー」を未然に防ぎます
+(function() {
+    const essentialArrays = ['monsters', 'foods', 'speciesBook', 'corpses', 'scenery', 'newBabies'];
+    essentialArrays.forEach(v => {
+        if (typeof window[v] === 'undefined') window[v] = [];
+    });
+    if (typeof window.zoom === 'undefined') window.zoom = 1;
+    if (typeof window.camX === 'undefined') window.camX = 0;
+    if (typeof window.camY === 'undefined') window.camY = 0;
+    if (typeof window.gameSpeed === 'undefined') window.gameSpeed = 1;
+})();
+
+// 3. キーボードショートカット
+// マウス操作以外での操作性を向上させます
+window.addEventListener('keydown', (e) => {
+    // 'S'キー：即座にセーブを実行
+    if (e.key === 's' || e.key === 'S') {
+        if (typeof saveGame === 'function') {
+            saveGame();
+        }
+    }
+    // 'C'キー：カメラ位置をワールド中央にリセット
+    if (e.key === 'c' || e.key === 'C') {
+        if (typeof worldW !== 'undefined' && typeof gCanvas !== 'undefined') {
+            camX = (worldW / 2) - (gCanvas.width / 2 / (zoom || 1));
+            camY = (worldH / 2) - (gCanvas.height / 2 / (zoom || 1));
+            if (typeof addLog === 'function') addLog("🎥 カメラ位置をリセットしました");
+        }
+    }
+});
