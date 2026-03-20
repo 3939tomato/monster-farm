@@ -27,15 +27,13 @@
         let isDragging = false, lastMouseX = 0, lastMouseY = 0;
         let gameSpeed = 1, isFocus = false;
 
-        let monsters = [], newBabies = [], speciesBook = []; 
-        let scenery = [], foods = [], corpses = [];
-        let selectedObject = null; 
-
-        // 天候システム用変数
+        // 天候・時間システム用変数
         let weather = 'sunny';
         let weatherTimer = 1800; 
         let lightnings = [];
         let raindrops = [];
+        let gameTime = 0;
+        let isNight = false;
 
         const artData = {
             tree: { p: ['#5e3c27', '#3d994e'], d: [[0,2,2,0],[2,2,2,2],[0,1,1,0]] },
@@ -132,8 +130,11 @@
                 this.exp = 0;
                 this.nextExp = 100;
 
-                // 戦闘用
+                // 戦闘・感情・巣作り用
                 this.fightTimer = 0;
+                this.panicTimer = 0;
+                this.carryingType = null;
+                this.emotion = "";
             }
 
             gainExp(amount) {
@@ -174,14 +175,19 @@
             update() {
                 this.lifeTimer--;
                 if (this.lifeTimer <= 0) return this.die("寿命");
-                if (this.fightTimer > 0) { this.fightTimer--; return true; } // 戦闘中は移動・思考停止
+
+                // タイマーと感情の初期化
+                this.emotion = "";
+                if (this.panicTimer > 0) { this.panicTimer--; this.emotion = "💦"; }
+                if (this.fightTimer > 0) { this.fightTimer--; this.emotion = "💢"; return true; } 
 
                 const currentBiome = getBiome(this.x, this.y);
                 
                 // バフと天候による速度計算
                 let speedMult = 1.0;
-                if (currentBiome === this.targetBiome) speedMult *= 1.5; // 自バイオームバフ
-                if (weather === 'sunny') speedMult *= 1.2; // 晴れバフ
+                if (currentBiome === this.targetBiome) speedMult *= 1.5; 
+                if (weather === 'sunny') speedMult *= 1.2; 
+                if (this.panicTimer > 0) speedMult *= 1.5; // パニック時はさらに加速
                 this.speed = this.speedVal * speedMult;
 
                 const isHighResist = (this.heatResist >= 20 || this.coldResist >= 20);
@@ -193,31 +199,58 @@
                 if (this.hunger > 100) { this.hp -= 0.2; if (this.hp <= 0) return this.die("餓死"); }
                 if (this.hp <= 0) return this.die("衰弱");
 
+                // 睡眠・巣のロジック
+                let distToNest = Math.sqrt((this.x - this.territoryX)**2 + (this.y - this.territoryY)**2);
+                let sleeping = false;
+                if (isNight || this.hp < this.hpMax * 0.3) {
+                    if (distToNest < 50) {
+                        sleeping = true;
+                        this.hp = Math.min(this.hpMax, this.hp + 0.05);
+                        this.emotion = "💤";
+                    }
+                }
+
+                // その他の感情表現（優先度順）
+                if (this.emotion === "") {
+                    if (this.breedTimer <= 0 && this.hunger < 40) this.emotion = "❤️";
+                    else if (this.hunger > 50) this.emotion = "🍖";
+                }
+
                 if (this.socialTimer-- <= 0) {
                     this.socialTimer = 20 + Math.random() * 10;
                     this.cachedAllies = monsters.filter(m => m !== this && m.species === this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 300);
                     
                     let target = null;
-                    if (this.diet === "肉食") target = monsters.find(m => m !== this && m.species !== this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
-                    else if (this.diet === "雑食") target = monsters.find(m => m.diet === "草食" && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                    // 縄張り防衛：巣の近くに他種族が来たら攻撃
+                    let intruder = monsters.find(m => m.species !== this.species && Math.sqrt((this.territoryX-m.x)**2+(this.territoryY-m.y)**2) < 150 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                    
+                    if (intruder) {
+                        target = intruder;
+                        sleeping = false; // 敵が来たら起きる
+                    } else if (!sleeping) {
+                        // 通常の狩り
+                        if (this.diet === "肉食") target = monsters.find(m => m !== this && m.species !== this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                        else if (this.diet === "雑食") target = monsters.find(m => m.diet === "草食" && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100);
+                    }
 
                     if (target) { 
-                        // 戦闘発生
-                        target.hp -= (this.power / 10) + 1; // 攻撃
-                        this.hp -= (target.power / 20) + 0.5; // 反撃ダメージ
-                        this.fightTimer = 60; // 1秒間の戦闘モーション
+                        target.hp -= (this.power / 10) + 1; 
+                        this.hp -= (target.power / 20) + 0.5; 
+                        this.fightTimer = 60; 
                         target.fightTimer = 60;
-                        this.vx = 0; this.vy = 0; // その場で止まる
-                        
-                        if (target.hp <= 0) {
-                            target.die("捕食");
-                            this.gainExp(50);
-                        }
+                        this.vx = 0; this.vy = 0; 
+                        this.emotion = "💢";
+                        target.emotion = "💢";
+                        if (target.hp <= 0) { target.die("捕食"); this.gainExp(50); }
                         if (this.hp <= 0) return this.die("返り討ち");
+                    } else if (!sleeping) {
+                        // 強敵が近くにいたらパニック
+                        let strongEnemy = monsters.find(m => m.species !== this.species && m.power > this.power * 1.5 && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 150);
+                        if (strongEnemy) this.panicTimer = 60;
                     }
                 }
 
-                if (this.timer-- <= 0) {
+                if (this.timer-- <= 0 && !sleeping) {
                     this.timer = 80 + Math.random()*60;
                     let moveX = 0, moveY = 0;
                     if (this.cachedAllies.length > 0) {
@@ -227,13 +260,52 @@
                     }
                     let searchDist = 400;
                     let food = foods.find(f => (f.type !== 'fish' || this.diet !== "草食") && Math.sqrt((this.x-f.x)**2+(this.y-f.y)**2) < searchDist);
+                    let corpse = corpses.find(c => Math.sqrt((this.x-c.x)**2+(this.y-c.y)**2) < searchDist && this.diet !== "草食");
                     let angle;
-                    if (food && this.hunger > 10) angle = Math.atan2(food.y - this.y, food.x - this.x);
-                    else if (currentBiome !== this.targetBiome) angle = Math.atan2(this.territoryY - this.y + moveY, this.territoryX - this.x + moveX);
-                    else angle = Math.random()*Math.PI*2;
+                    
+                    if (this.panicTimer > 0) {
+                        // パニック時はランダムに逃げ回る
+                        angle = Math.random() * Math.PI * 2;
+                    } else if (this.carryingType) {
+                        // アイテムを巣に持ち帰る
+                        if (distToNest < 40) {
+                            if (this.carryingType === 'corpse') corpses.push({x: this.territoryX + (Math.random()-0.5)*40, y: this.territoryY + (Math.random()-0.5)*40});
+                            else foods.push({x: this.territoryX + (Math.random()-0.5)*40, y: this.territoryY + (Math.random()-0.5)*40, type: this.carryingType});
+                            this.carryingType = null;
+                            angle = Math.random()*Math.PI*2;
+                        } else {
+                            angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
+                        }
+                    } else if (isNight) {
+                        // 夜は巣に帰る
+                        angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
+                    } else if (this.hunger <= 20 && distToNest > 100 && (food || corpse)) {
+                        // 満腹時は巣にアイテムを集める
+                        let t = corpse ? corpse : food;
+                        if (Math.sqrt((this.x-t.x)**2+(this.y-t.y)**2) < 30) {
+                            if (corpse) {
+                                let idx = corpses.indexOf(corpse);
+                                if(idx !== -1) { corpses.splice(idx, 1); this.carryingType = 'corpse'; }
+                            } else {
+                                let idx = foods.indexOf(t);
+                                if(idx !== -1) { foods.splice(idx, 1); this.carryingType = t.type; }
+                            }
+                            angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
+                        } else {
+                            angle = Math.atan2(t.y - this.y, t.x - this.x);
+                        }
+                    } else if (food && this.hunger > 10) {
+                        angle = Math.atan2(food.y - this.y, food.x - this.x);
+                    } else if (currentBiome !== this.targetBiome) {
+                        angle = Math.atan2(this.territoryY - this.y + moveY, this.territoryX - this.x + moveX);
+                    } else {
+                        angle = Math.random()*Math.PI*2;
+                    }
                     this.vx = Math.cos(angle)*this.speed + (moveX/100); 
                     this.vy = Math.sin(angle)*this.speed + (moveY/100);
                 }
+                
+                if (sleeping) { this.vx = 0; this.vy = 0; }
                 
                 let nextX = Math.max(85, Math.min(worldW-145, this.x + this.vx));
                 let nextY = Math.max(85, Math.min(worldH-145, this.y + this.vy));
@@ -278,8 +350,8 @@
                 let sx = (this.x - camX) * zoom, sy = (this.y - camY) * zoom;
                 if (sx < -100 || sx > gCanvas.width + 100 || sy < -100 || sy > gCanvas.height + 100) return;
                 
-                // 戦闘モーション（激しく震える）
-                if (this.fightTimer > 0) {
+                // 戦闘・パニックモーション（激しく震える）
+                if (this.fightTimer > 0 || this.panicTimer > 0) {
                     sx += (Math.random() - 0.5) * 10 * zoom;
                     sy += (Math.random() - 0.5) * 10 * zoom;
                 }
@@ -288,6 +360,20 @@
                 const s = (displaySize/32)*zoom;
                 for(let y=0; y<32; y++) for(let x=0; x<32; x++) if(this.data[y][x]){ gCtx.fillStyle = this.data[y][x]; gCtx.fillRect(sx+x*s, sy+y*s, s+1, s+1); }
                 if (selectedObject === this) { gCtx.strokeStyle = "yellow"; gCtx.lineWidth = 3; gCtx.strokeRect(sx, sy, displaySize*zoom, displaySize*zoom); }
+
+                // 感情アイコンの描画
+                if (this.emotion) {
+                    gCtx.font = `${20 * zoom}px sans-serif`;
+                    gCtx.textAlign = "center";
+                    gCtx.fillText(this.emotion, sx + (displaySize/2)*zoom, sy - 5*zoom);
+                    gCtx.textAlign = "left";
+                }
+
+                // 運搬アイテムの描画
+                if (this.carryingType) {
+                    let art = this.carryingType === 'corpse' ? artData.corpse : artData[this.carryingType];
+                    if (art) drawPixelArt(gCtx, this.x + 20, this.y - 15, art.p, art.d, 5, true);
+                }
             }
         }
 
@@ -399,7 +485,7 @@
         }
 
         function saveGame() {
-            const saveData = { monsters: monsters.map(m => { let mData = Object.assign({}, m); delete mData.cachedAllies; return mData; }), speciesBook, scenery, foods, corpses, camX, camY, zoom };
+            const saveData = { monsters: monsters.map(m => { let mData = Object.assign({}, m); delete mData.cachedAllies; return mData; }), speciesBook, scenery, foods, corpses, camX, camY, zoom, gameTime };
             localStorage.setItem('monsterFarmSave', JSON.stringify(saveData));
             addLog('💾 セーブしました！');
         }
@@ -409,7 +495,7 @@
             if (saved) {
                 try {
                     const data = JSON.parse(saved);
-                    speciesBook = data.speciesBook || []; scenery = data.scenery || []; foods = data.foods || []; corpses = data.corpses || []; camX = data.camX; camY = data.camY; zoom = data.zoom || 0.3;
+                    speciesBook = data.speciesBook || []; scenery = data.scenery || []; foods = data.foods || []; corpses = data.corpses || []; camX = data.camX; camY = data.camY; zoom = data.zoom || 0.3; gameTime = data.gameTime || 0;
                     document.getElementById('zoomSlider').value = zoom * 100;
                     monsters = (data.monsters || []).map(m => { let newM = new Monster(m.data, m.species, 10, 10, m.artUrl, m.diet, m.heatResist, m.coldResist); Object.assign(newM, m); newM.cachedAllies = []; return newM; });
                     addLog('📂 ロード完了！');
@@ -430,6 +516,10 @@
             
             if(gameSpeed > 0) { 
                 for(let i=0; i<gameSpeed; i++) { 
+                    // 時間経過と夜の判定
+                    gameTime++;
+                    isNight = (gameTime % 4800) > 2400;
+
                     // 天候の変化
                     weatherTimer--;
                     if (weatherTimer <= 0) {
@@ -448,9 +538,13 @@
                         lightnings.push({x: lx, y: ly, timer: 15});
                         
                         monsters.forEach(m => {
-                            if (Math.sqrt((m.x - lx)**2 + (m.y - ly)**2) < 200) {
+                            let dist = Math.sqrt((m.x - lx)**2 + (m.y - ly)**2);
+                            if (dist < 200) {
                                 m.hp -= 50;
                                 if (m.hp <= 0) m.die("落雷");
+                                else m.panicTimer = 60;
+                            } else if (dist < 500) {
+                                m.panicTimer = 60; // 近くに落ちてもパニック
                             }
                         });
                         
@@ -466,7 +560,13 @@
             
             if(isFocus && selectedObject instanceof Monster) { camX = selectedObject.x - (gCanvas.width/2)/zoom; camY = selectedObject.y - (gCanvas.height/2)/zoom; }
             
-            // --- 追加：天候による画面暗転と雨エフェクト ---
+            // 夜の画面暗転
+            if (isNight) {
+                gCtx.fillStyle = "rgba(0, 0, 15, 0.4)";
+                gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height);
+            }
+
+            // 雨・嵐の画面暗転とエフェクト
             if (weather === 'rain' || weather === 'storm') {
                 gCtx.fillStyle = weather === 'storm' ? "rgba(0, 0, 0, 0.4)" : "rgba(0, 0, 0, 0.2)";
                 gCtx.fillRect(0, 0, gCanvas.width, gCanvas.height);
@@ -488,7 +588,6 @@
                 gCtx.stroke();
                 raindrops = raindrops.filter(r => r.y < gCanvas.height && r.x > -50);
             }
-            // ---------------------------------------------
 
             // 雷の描画
             lightnings.forEach(l => {
@@ -508,15 +607,16 @@
             });
             lightnings = lightnings.filter(l => l.timer > 0);
 
-            // 天候の画面表示 (画面上部中央)
+            // 天候と時間の画面表示 (画面上部中央)
             gCtx.fillStyle = "rgba(0, 0, 0, 0.7)";
-            const textW = 120;
+            const textW = 180;
             gCtx.fillRect(gCanvas.width/2 - textW/2, 20, textW, 30);
             gCtx.fillStyle = "white";
             gCtx.font = "bold 16px sans-serif";
             gCtx.textAlign = "center";
             const wText = weather === 'sunny' ? '☀️ 晴れ' : weather === 'rain' ? '🌧️ 雨' : '⚡ 嵐';
-            gCtx.fillText("天候: " + wText, gCanvas.width/2, 40);
+            const timeText = isNight ? '🌙 夜' : '☀️ 昼';
+            gCtx.fillText("天候: " + wText + " | " + timeText, gCanvas.width/2, 40);
             gCtx.textAlign = "left"; // リセット
 
             if(selectedObject) {
