@@ -861,7 +861,7 @@ window.addEventListener('keydown', (e) => {
             if (m.hasMutationChecked === undefined) {
                 
                 // 【1%の確率】で突然変異が発生
-                if (Math.random() < 1.0) { 
+                if (Math.random() < 0.01) { 
                     m.isMutant = true; // 突然変異フラグを立てる
 
                     // パワーかスピード、どちらを倍にするか決める（50%ずつ）
