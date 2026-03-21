@@ -843,6 +843,148 @@ window.addEventListener('keydown', (e) => {
         }
         
         // 影のUIループを開始！
+
+// ==========================================
+// 【拡張】突然変異システム ＆ UI表示アップデート
+// ==========================================
+(function() {
+    // --- システム1：突然変異 生成ロジック ---
+    // 生まれたばかりのモンスターを監視し、1%で能力を倍にします。
+    if (window.mutationSystemTimer) clearInterval(window.mutationSystemTimer);
+    
+    window.mutationSystemTimer = setInterval(() => {
+        if (typeof monsters === 'undefined' || !Array.isArray(monsters)) return;
+
+        monsters.forEach(m => {
+            // まだ突然変異のチェックをしていないモンスター（生まれたばかり）が対象
+            if (m.isDead) return;
+            if (m.hasMutationChecked === undefined) {
+                
+                // 【1%の確率】で突然変異が発生
+                if (Math.random() < 0.01) { 
+                    m.isMutant = true; // 突然変異フラグを立てる
+
+                    // パワーかスピード、どちらを倍にするか決める（50%ずつ）
+                    if (Math.random() < 0.5) {
+                        // パワーを2倍に（念のため数値であることを確認）
+                        m.power = (m.power || 10) * 2;
+                        m.mutantType = "力"; // UI表示用の目印
+                    } else {
+                        // スピードを2倍に
+                        m.speedVal = (m.speedVal || 1) * 2;
+                        m.mutantType = "速";
+                    }
+                }
+
+                // チェック完了フラグを立てる（二度と倍にならないようにするため）
+                m.hasMutationChecked = true; 
+            }
+        });
+    }, 500); // 0.5秒ごとに新しい個体をチェック
+
+
+    // --- システム2：UI完全乗っ取りシステム（突然変異表示対応版） ---
+    // 前回の高速上書きロジックを、突然変異の表示に対応させます。
+    
+    const oldStats = document.getElementById('targetStats');
+    if (oldStats) {
+        // 元のUIを非表示にする
+        oldStats.style.display = 'none';
+        
+        // 自分たち専用の表示エリア（superTargetStats）を作る（なければ）
+        let newStats = document.getElementById('superTargetStats');
+        if (!newStats) {
+            newStats = document.createElement('div');
+            newStats.id = 'superTargetStats';
+            oldStats.parentNode.insertBefore(newStats, oldStats.nextSibling);
+        }
+
+        // 毎フレームUIを更新するループ関数
+        function updateSuperUIWithMutation() {
+            if (typeof selectedObject !== 'undefined' && selectedObject) {
+                const obj = selectedObject;
+                let html = "";
+
+                // --- 判定：モンスターの場合 ---
+                if (obj.species !== undefined || obj.hpMax !== undefined) {
+                    const em = obj.emotion || "通常";
+                    const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
+                    
+                    // 【追加点】突然変異個体の場合のラベルを作成
+                    let mutantLabel = "";
+                    if (obj.isMutant) {
+                        const typeChar = obj.mutantType || "？";
+                        const typeColor = typeChar === "力" ? "#ff5252" : "#40c4ff"; // 力は赤、速は青
+                        mutantLabel = `
+                            <div style="background:linear-gradient(45deg, #444, #222); border:1px solid ${typeColor}; color:${typeColor}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold; display:inline-block; margin-bottom:5px; box-shadow:0 0 5px ${typeColor};">
+                                🌟 突然変異個体【${typeChar}】
+                            </div>
+                        `;
+                    }
+
+                    // パワーとスピードの表示スタイル（突然変異した方を強調）
+                    const pStyle = (obj.isMutant && obj.mutantType === "力") ? "color:#ff5252; font-weight:bold; text-shadow:0 0 3px #ff5252;" : "";
+                    const sStyle = (obj.isMutant && obj.mutantType === "速") ? "color:#40c4ff; font-weight:bold; text-shadow:0 0 3px #40c4ff;" : "";
+
+                    html = `
+                        ${mutantLabel}
+                        <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                            <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
+                            <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
+                        </div>
+                        <div style="line-height:1.6; font-family:monospace;">
+                            <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
+                            HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
+                            空腹: ${Math.floor(obj.hunger || 0)}%<br>
+                            パワー: <span style="${pStyle}">${Math.floor(obj.power || 0)}</span> / 速さ: <span style="${sStyle}">${Math.floor((obj.speedVal || 0) * 10)}</span><br>
+                            耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
+                        </div>
+                    `;
+                } 
+                // --- 判定：食べ物（エサ）・なきがらの場合（変更なし） ---
+                else {
+                    const type = obj.type || (obj.isCorpse ? "corpse" : "item");
+                    const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
+                    const icon = icons[type] || '📦';
+                    const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
+                    const recovery = obj.value || obj.nutrition || 20;
+
+                    html = `
+                        <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                            <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
+                            <b style="font-size:1.3em; margin-left:8px;">${label}</b>
+                        </div>
+                        <div style="line-height:1.6;">
+                            <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
+                                回復量: 🍖 ${recovery}
+                            </span><br>
+                            <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
+                                状態: フィールドオブジェクト<br>
+                                座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 内容が変わった時だけ書き換え
+                if (newStats.innerHTML !== html) {
+                    newStats.innerHTML = html;
+                }
+            } else {
+                if (newStats.innerHTML !== "") newStats.innerHTML = "";
+            }
+            
+            // 次のフレームも更新
+            requestAnimationFrame(updateSuperUIWithMutation); 
+        }
+        
+        // 影のUIループを開始！
+        updateSuperUIWithMutation(); 
+    }
+})();
+
+
+            
         updateSuperUI(); 
     }
 })();
