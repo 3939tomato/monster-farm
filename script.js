@@ -820,162 +820,22 @@ window.addEventListener('keydown', (e) => {
 })();
 
 // ==========================================
-// 【UI最終調整】モンスターアイコン ＆ エサの回復量表示
+// 睡眠回復 ＆ アイコン・回復量表示システム
 // ==========================================
 (function() {
-    // 10回チェック済み：既存のタイマーとぶつからないよう、このスクリプト専用のIDで管理
-    if (window.finalUiTimer) clearInterval(window.finalUiTimer);
-
-    window.finalUiTimer = setInterval(() => {
-        const statsEl = document.getElementById('targetStats');
-        if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
-
-        let html = "";
-        const obj = selectedObject;
-
-        try {
-            // --- モンスターの場合 ---
-            if (obj.species !== undefined) {
-                const em = obj.emotion || "無"; // 感情がない場合は「無」
-                const hpColor = obj.emotion === '💤' ? '#00ff00' : '#ffffff';
-                
-                html = `
-                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
-                        <b style="font-size:1.2em;">${obj.species}</b> 
-                        <span style="font-size:1.5em; margin-left:10px; background:#444; padding:2px 6px; border-radius:4px;">${em}</span>
-                    </div>
-                    <div style="font-size:0.95em; line-height:1.5;">
-                        <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
-                        HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
-                        空腹: ${Math.floor(obj.hunger || 0)}%<br>
-                        耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
-                    </div>
-                `;
-            } 
-            // --- 食べ物・エサ・死体の場合 ---
-            else {
-                const type = obj.type || (obj.isCorpse ? "corpse" : "object");
-                const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
-                const icon = icons[type] || '📦';
-                const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
-                
-                // 回復量の表示（プロパティに合わせて自動選択）
-                const recoverAmt = obj.value || obj.nutrition || 20; 
-
-                html = `
-                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
-                        <b style="font-size:1.2em;">${icon} ${label}</b>
-                    </div>
-                    <div style="font-size:0.95em; line-height:1.5;">
-                        <span style="color:#ffeb3b; font-weight:bold;">回復量: 🍖 ${recoverAmt}</span><br>
-                        状態: フィールドアイテム<br>
-                        座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
-                    </div>
-                `;
-            }
-
-            // 内容が変わった時だけ書き換え（フリーズ防止の要）
-            if (statsEl.innerHTML !== html) {
-                statsEl.innerHTML = html;
-            }
-        } catch (e) {
-            // エラー時は処理をスキップ
-        }
-    }, 200); // 0.2秒ごとにチェック
-})();
-
-// ==========================================
-// 【最終兵器】UI強制書き換え・アイコン＆回復量表示
-// ==========================================
-(function() {
-    // 既存のタイマーをすべて掃除
-    if (window.masterUiTimer) clearInterval(window.masterUiTimer);
-
-    // 0.1秒ごとに「今の表示内容」をチェックし、足りなければ強制的に書き換える
-    window.masterUiTimer = setInterval(() => {
-        const statsEl = document.getElementById('targetStats');
-        // 選択されているものがなければ何もしない
-        if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
-
-        const obj = selectedObject;
-        let finalHtml = "";
-
-        // --- 判定：モンスターか、エサか ---
-        const isMonster = obj.species !== undefined || obj.hpMax !== undefined;
-
-        if (isMonster) {
-            // 【モンスターの場合】
-            const em = obj.emotion || "通常";
-            const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
-            
-            finalHtml = `
-                <div style="border-bottom:2px solid #666; margin-bottom:8px; padding-bottom:5px;">
-                    <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
-                    <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
-                </div>
-                <div style="line-height:1.6; font-family:monospace;">
-                    <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
-                    HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
-                    空腹: ${Math.floor(obj.hunger || 0)}%<br>
-                    パワー: ${obj.power || 0} / 速さ: ${Math.floor((obj.speedVal || 0) * 10)}<br>
-                    耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
-                </div>
-            `;
-        } else {
-            // 【エサ・アイテム・なきがらの場合】
-            const type = obj.type || (obj.isCorpse ? "corpse" : "item");
-            const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
-            const icon = icons[type] || '📦';
-            const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
-            
-            // 回復量の計算（20を基本値とし、設定があればそれを使う）
-            const recovery = obj.value || obj.nutrition || 20;
-
-            finalHtml = `
-                <div style="border-bottom:2px solid #666; margin-bottom:8px; padding-bottom:5px;">
-                    <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
-                    <b style="font-size:1.3em; margin-left:8px;">${label}</b>
-                </div>
-                <div style="line-height:1.6;">
-                    <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
-                        回復量: 🍖 ${recovery}
-                    </span><br>
-                    <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
-                        状態: フィールドオブジェクト<br>
-                        座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
-                    </div>
-                </div>
-            `;
-        }
-
-        // 【ここが重要】
-        // もし今の表示に「アイコン」や「回復量」が含まれていなければ、強制的に書き換える
-        // これにより、元々のプログラムの上書きをさらに「上書き返し」します
-        if (!statsEl.innerHTML.includes('font-size:1.6em')) {
-            statsEl.innerHTML = finalHtml;
-        }
-    }, 100); // 1秒間に10回チェック
-})();
-
-// ==========================================
-// 睡眠回復＆クリック時UI上書きシステム（JS/HTML用）
-// ==========================================
-(function() {
-    // 1. 睡眠中（💤）のHP回復（1秒ごとに安全に実行）
+    // 1. 睡眠中（💤）のHP回復
     setInterval(() => {
         if (typeof monsters !== 'undefined' && Array.isArray(monsters)) {
             monsters.forEach(m => {
                 if (m.emotion === '💤' && !m.isDead && m.hp < m.hpMax) {
-                    m.hp += 2; // 睡眠時の回復量
-                    if (m.hp > m.hpMax) m.hp = m.hpMax;
+                    m.hp = Math.min(m.hpMax, (m.hp || 0) + 2); 
                 }
             });
         }
     }, 1000);
 
-    // 2. クリックした時のUI表示（元の処理が終わった直後に上書きする）
+    // 2. クリック時のUI強制書き換え
     document.addEventListener('mousedown', () => {
-        // 元のクリック処理が完了して selectedObject がセットされるのを少し待つ
         setTimeout(() => {
             const statsEl = document.getElementById('targetStats');
             if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
@@ -983,26 +843,26 @@ window.addEventListener('keydown', (e) => {
             const obj = selectedObject;
             let html = "";
 
-            // モンスターの場合（speciesやhpMaxがあるかで判定）
+            // モンスターかどうかの判定
             if (obj.species !== undefined || obj.hpMax !== undefined) {
-                const em = obj.emotion || "";
+                const em = obj.emotion || "通常";
                 const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
                 
                 html = `
-                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
-                        <span style="font-size:1.5em; vertical-align:middle;">${em}</span>
-                        <b style="font-size:1.2em; margin-left:8px;">${obj.species || "モンスター"}</b>
+                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                        <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
+                        <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
                     </div>
-                    <div>
-                        Lv.${obj.level || 1} [${obj.personality || "普通"}]<br>
+                    <div style="line-height:1.6;">
+                        <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
                         HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
                         空腹: ${Math.floor(obj.hunger || 0)}%<br>
-                        パワー: ${obj.power || 0} / スピード: ${Math.floor((obj.speedVal || 0) * 10)}<br>
+                        パワー: ${obj.power || 0} / 速さ: ${Math.floor((obj.speedVal || 0) * 10)}<br>
                         耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
                     </div>
                 `;
             } 
-            // 食べ物（エサ）などの場合
+            // 食べ物（エサ）・なきがらの場合
             else {
                 const type = obj.type || (obj.isCorpse ? "corpse" : "item");
                 const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
@@ -1011,20 +871,23 @@ window.addEventListener('keydown', (e) => {
                 const recovery = obj.value || obj.nutrition || 20;
 
                 html = `
-                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
-                        <span style="font-size:1.5em; vertical-align:middle;">${icon}</span>
-                        <b style="font-size:1.2em; margin-left:8px;">${label}</b>
+                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                        <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
+                        <b style="font-size:1.3em; margin-left:8px;">${label}</b>
                     </div>
-                    <div>
-                        <span style="color:#ffeb3b; font-weight:bold;">回復量: 🍖 ${recovery}</span><br>
-                        状態: フィールドアイテム<br>
-                        座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                    <div style="line-height:1.6;">
+                        <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
+                            回復量: 🍖 ${recovery}
+                        </span><br>
+                        <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
+                            状態: フィールドオブジェクト<br>
+                            座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                        </div>
                     </div>
                 `;
             }
 
-            // HTMLを書き換え
             statsEl.innerHTML = html;
-        }, 50); // 0.05秒遅らせて実行（フリーズ防止と上書き確実化のため）
+        }, 60); // 元の処理が終わるのを待ってから上書き
     });
 })();
