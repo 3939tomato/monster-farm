@@ -581,3 +581,165 @@ window.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// ==========================================
+// 拡張パック：感情アイコン・縄張り・巣作りAI
+// ==========================================
+(function() {
+    // 既存の基本処理（移動や描画）をバックアップ
+    const origUpdate = Monster.prototype.update;
+    const origDraw = Monster.prototype.draw;
+
+    // --- 1. AIロジックの拡張 ---
+    Monster.prototype.update = function() {
+        // 元の生存判定・基本移動・空腹ダメージ等を先に実行
+        const isAlive = origUpdate.call(this);
+        if (!isAlive) return false;
+
+        // 巣の座標がない場合（古いデータ等）は現在地をホームに設定
+        if (typeof this.territoryX === 'undefined') {
+            this.territoryX = this.x;
+            this.territoryY = this.y;
+        }
+
+        this.emotion = "";
+        let isSleeping = false;
+        let distToNest = Math.sqrt((this.x - this.territoryX)**2 + (this.y - this.territoryY)**2);
+
+        // ① 睡眠 (💤) : 夜間、またはHP30%以下
+        if ((typeof isNight !== 'undefined' && isNight) || this.hp < this.hpMax * 0.3) {
+            if (distToNest < 80) {
+                isSleeping = true;
+                this.vx = 0; this.vy = 0;
+                this.emotion = "💤";
+                this.hp = Math.min(this.hpMax, this.hp + 0.1); // 巣で休むと少しずつ回復
+            } else {
+                // 巣に帰還する
+                let angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
+                this.vx = Math.cos(angle) * this.speedVal;
+                this.vy = Math.sin(angle) * this.speedVal;
+                this.emotion = "💤"; 
+            }
+        }
+
+        if (!isSleeping) {
+            // ② 縄張り防衛と怒り (💢) : 巣の半径300以内にいる他種族を攻撃
+            let enemy = monsters.find(m => m !== this && m.species !== this.species && !m.isDead && Math.sqrt((this.x - m.x)**2 + (this.y - m.y)**2) < 150);
+            let isDefending = false;
+            
+            if (enemy && distToNest < 300) {
+                let angle = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+                this.vx = Math.cos(angle) * (this.speedVal * 1.5); // 怒りのダッシュ
+                this.vy = Math.sin(angle) * (this.speedVal * 1.5);
+                this.emotion = "💢";
+                isDefending = true;
+                
+                // 接触したらダメージを与える
+                if (Math.sqrt((this.x - enemy.x)**2 + (this.y - enemy.y)**2) < 40) {
+                    enemy.hp -= this.power * 0.05;
+                }
+            }
+
+            // ③ パニック・逃走 (💦) : 縄張り外で、自分より明らかに強い敵が近くにいる場合
+            if (!isDefending && enemy && enemy.power > this.power * 1.2) {
+                let angle = Math.atan2(this.y - enemy.y, this.x - enemy.x); // 逆方向に逃げる
+                this.vx = Math.cos(angle) * (this.speedVal * 1.5);
+                this.vy = Math.sin(angle) * (this.speedVal * 1.5);
+                this.emotion = "💦";
+            }
+
+            // ④ 求愛 (❤️) : 繁殖期かつ空腹でない
+            if (!this.emotion && this.breedTimer <= 0 && this.hunger < 30) {
+                let mate = monsters.find(m => m !== this && m.species === this.species && m.breedTimer <= 0 && Math.sqrt((this.x - m.x)**2 + (this.y - m.y)**2) < 200);
+                if (mate) {
+                    let angle = Math.atan2(mate.y - this.y, mate.x - this.x);
+                    this.vx = Math.cos(angle) * this.speedVal;
+                    this.vy = Math.sin(angle) * this.speedVal;
+                    this.emotion = "❤️";
+                }
+            }
+
+            // ⑤ 空腹 (🍖)
+            if (!this.emotion && this.hunger > 60) {
+                this.emotion = "🍖";
+            }
+
+            // ⑥ 巣作り（エサ・なきがらの運搬） : 満腹時に周囲のアイテムを巣へ集める
+            if (!this.emotion && !isDefending && this.hunger < 50) {
+                if (!this.carrying) {
+                    // 足元にあるアイテムを探す
+                    let itemIdx = -1, isCorpse = false;
+                    if (typeof corpses !== 'undefined') {
+                        itemIdx = corpses.findIndex(c => Math.sqrt((this.x - c.x)**2 + (this.y - c.y)**2) < 40);
+                        isCorpse = true;
+                    }
+                    if (itemIdx === -1 && typeof foods !== 'undefined') {
+                        itemIdx = foods.findIndex(f => Math.sqrt((this.x - f.x)**2 + (this.y - f.y)**2) < 40);
+                        isCorpse = false;
+                    }
+
+                    if (itemIdx !== -1) {
+                        // アイテムを拾う
+                        this.carrying = isCorpse ? corpses.splice(itemIdx, 1)[0] : foods.splice(itemIdx, 1)[0];
+                        this.carrying.isCorpse = isCorpse;
+                    }
+                } else {
+                    // アイテムを巣に持ち帰る
+                    if (distToNest < 50) {
+                        // 巣の周りに配置
+                        if (this.carrying.isCorpse && typeof corpses !== 'undefined') {
+                            corpses.push({x: this.territoryX + Math.random()*40-20, y: this.territoryY + Math.random()*40-20});
+                        } else if (typeof foods !== 'undefined') {
+                            foods.push({x: this.territoryX + Math.random()*40-20, y: this.territoryY + Math.random()*40-20, type: this.carrying.type});
+                        }
+                        this.carrying = null;
+                    } else {
+                        let angle = Math.atan2(this.territoryY - this.y, this.territoryX - this.x);
+                        this.vx = Math.cos(angle) * this.speedVal;
+                        this.vy = Math.sin(angle) * this.speedVal;
+                        this.emotion = "📦"; // 隠し要素：運搬中アイコン
+                    }
+                }
+            }
+        }
+        
+        // 追加AIによって移動方向(vx, vy)を上書きした場合、
+        // 元コードのランダム移動処理に上書きされないようタイマーを延長して保護
+        if (this.emotion !== "" || isSleeping || this.carrying) {
+            this.timer = 10; 
+        }
+
+        return true;
+    };
+
+    // --- 2. 描画ロジックの拡張 ---
+    Monster.prototype.draw = function() {
+        // 元の描画（モンスター本体）を実行
+        origDraw.call(this);
+
+        // ズームとカメラの計算を安全に取得
+        const z = typeof zoom !== 'undefined' ? zoom : 1;
+        const cx = typeof camX !== 'undefined' ? camX : 0;
+        const cy = typeof camY !== 'undefined' ? camY : 0;
+        let sx = (this.x - cx) * z;
+        let sy = (this.y - cy) * z;
+
+        // 画面外ならアイコンを描画しない（パフォーマンス対策）
+        if (sx < -50 || sx > (typeof gCanvas !== 'undefined' ? gCanvas.width : 2000) + 50 || 
+            sy < -50 || sy > (typeof gCanvas !== 'undefined' ? gCanvas.height : 2000) + 50) return;
+
+        const ctx = typeof gCtx !== 'undefined' ? gCtx : document.getElementById('gameCanvas').getContext('2d');
+
+        // 感情アイコンを頭上に描画
+        if (this.emotion) {
+            ctx.font = `${24 * z}px sans-serif`;
+            ctx.fillText(this.emotion, sx + 5 * z, sy - 5 * z);
+        }
+        
+        // 運搬中のアイテムを足元に描画
+        if (this.carrying) {
+            ctx.fillStyle = this.carrying.isCorpse ? "#e0e0e0" : "#ff4444";
+            ctx.fillRect(sx + 15 * z, sy + 15 * z, 8 * z, 8 * z);
+        }
+    };
+})();
