@@ -744,14 +744,13 @@ window.addEventListener('keydown', (e) => {
     };
 })();
 
-console.log("=== システム起動チェック！ ===");
-
 // ==========================================
-// 睡眠回復 ＆ アイコン・回復量表示システム
+// 睡眠回復 ＆ UI完全乗っ取りシステム（高速ループ対応版）
 // ==========================================
 (function() {
-    // 1. 睡眠中（💤）のHP回復
-    setInterval(() => {
+    // 1. 睡眠中（💤）のHP回復（ここは今まで通り動きます）
+    if (window.healTimer) clearInterval(window.healTimer);
+    window.healTimer = setInterval(() => {
         if (typeof monsters !== 'undefined' && Array.isArray(monsters)) {
             monsters.forEach(m => {
                 if (m.emotion === '💤' && !m.isDead && m.hp < m.hpMax) {
@@ -761,60 +760,89 @@ console.log("=== システム起動チェック！ ===");
         }
     }, 1000);
 
-    // 2. クリック時のUI強制書き換え
-    document.addEventListener('mousedown', () => {
-        setTimeout(() => {
-            const statsEl = document.getElementById('targetStats');
-            if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
+    // 2. 元の高速UIを透明にして、新しい専用UIを被せる
+    const oldStats = document.getElementById('targetStats');
+    if (oldStats) {
+        // 元の文字表示を非表示にする（裏で動き続けるので元の絵のエラーは起きません）
+        oldStats.style.display = 'none';
+        
+        // 新しい自分たち専用の表示エリアを作る
+        let newStats = document.getElementById('superTargetStats');
+        if (!newStats) {
+            newStats = document.createElement('div');
+            newStats.id = 'superTargetStats';
+            // 古い表示エリアのすぐ下に挿入
+            oldStats.parentNode.insertBefore(newStats, oldStats.nextSibling);
+        }
 
-            const obj = selectedObject;
-            let html = "";
+        // 元の mainLoop と同じスピード（毎フレーム）で新しいUIを更新する
+        function updateSuperUI() {
+            if (typeof selectedObject !== 'undefined' && selectedObject) {
+                const obj = selectedObject;
+                let html = "";
 
-            // モンスターかどうかの判定
-            if (obj.species !== undefined || obj.hpMax !== undefined) {
-                const em = obj.emotion || "通常";
-                const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
-                
-                html = `
-                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
-                        <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
-                        <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
-                    </div>
-                    <div style="line-height:1.6;">
-                        <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
-                        HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
-                        空腹: ${Math.floor(obj.hunger || 0)}%<br>
-                        パワー: ${obj.power || 0} / 速さ: ${Math.floor((obj.speedVal || 0) * 10)}<br>
-                        耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
-                    </div>
-                `;
-            } 
-            // 食べ物（エサ）・なきがらの場合
-            else {
-                const type = obj.type || (obj.isCorpse ? "corpse" : "item");
-                const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
-                const icon = icons[type] || '📦';
-                const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
-                const recovery = obj.value || obj.nutrition || 20;
-
-                html = `
-                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
-                        <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
-                        <b style="font-size:1.3em; margin-left:8px;">${label}</b>
-                    </div>
-                    <div style="line-height:1.6;">
-                        <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
-                            回復量: 🍖 ${recovery}
-                        </span><br>
-                        <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
-                            状態: フィールドオブジェクト<br>
-                            座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                // --- モンスターかどうかの判定 ---
+                if (obj.species !== undefined || obj.hpMax !== undefined) {
+                    const em = obj.emotion || "通常";
+                    const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
+                    
+                    html = `
+                        <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                            <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
+                            <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
                         </div>
-                    </div>
-                `;
-            }
+                        <div style="line-height:1.6;">
+                            <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
+                            HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
+                            空腹: ${Math.floor(obj.hunger || 0)}%<br>
+                            パワー: ${Math.floor(obj.power || 0)} / スピード: ${Math.floor((obj.speedVal || 0) * 10)}<br>
+                            耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
+                        </div>
+                    `;
+                } 
+                // --- 食べ物（エサ）・なきがらの場合 ---
+                else {
+                    const type = obj.type || (obj.isCorpse ? "corpse" : "item");
+                    const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
+                    const icon = icons[type] || '📦';
+                    const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
+                    
+                    // 回復量の計算（基本20）
+                    const recovery = obj.value || obj.nutrition || 20;
 
-            statsEl.innerHTML = html;
-        }, 60); // 元の処理が終わるのを待ってから上書き
-    });
+                    html = `
+                        <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                            <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
+                            <b style="font-size:1.3em; margin-left:8px;">${label}</b>
+                        </div>
+                        <div style="line-height:1.6;">
+                            <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
+                                回復量: 🍖 ${recovery}
+                            </span><br>
+                            <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
+                                状態: フィールドオブジェクト<br>
+                                座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 画面のチラつきを防ぐため、内容が変わった時だけ書き換え
+                if (newStats.innerHTML !== html) {
+                    newStats.innerHTML = html;
+                }
+            } else {
+                // 何も選択されていない時は空にする
+                if (newStats.innerHTML !== "") {
+                    newStats.innerHTML = "";
+                }
+            }
+            
+            // 次のフレームも自分自身を呼び出して更新し続ける
+            requestAnimationFrame(updateSuperUI); 
+        }
+        
+        // 影のUIループを開始！
+        updateSuperUI(); 
+    }
 })();
