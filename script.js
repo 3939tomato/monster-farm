@@ -823,6 +823,77 @@ window.addEventListener('keydown', (e) => {
         }
     });
 
+// ==========================================
+// 【フリーズ修正版】UI復旧・睡眠回復パック
+// ==========================================
+(function() {
+    // 1. 前回のフリーズ原因（Observer）を強制停止してメモリを解放
+    if (window.uiObserver) {
+        window.uiObserver.disconnect();
+        window.uiObserver = null;
+    }
+
+    // 2. 睡眠中のHP回復（1秒に1回、安全な周期で実行）
+    if (window.hpRecoverInterval) clearInterval(window.hpRecoverInterval);
+    window.hpRecoverInterval = setInterval(() => {
+        if (typeof monsters === 'undefined') return;
+        monsters.forEach(m => {
+            if (m.emotion === "💤" && !m.isDead) {
+                m.hp = Math.min(m.hpMax, (m.hp || 0) + 5); // 5ずつ回復
+            }
+        });
+    }, 1000);
+
+    // 3. 安全なUI更新（100msごとに、選択中のオブジェクトがある時だけ描画）
+    // MutationObserverを使わず、シンプルに内容を書き換える「安全な」方式に変更
+    if (window.uiUpdateInterval) clearInterval(window.uiUpdateInterval);
+    window.uiUpdateInterval = setInterval(() => {
+        const statsEl = document.getElementById('targetStats');
+        if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
+
+        let html = "";
+        try {
+            // モンスターの場合
+            if (selectedObject.species !== undefined) {
+                const em = selectedObject.emotion || "";
+                const hpStyle = em === '💤' ? 'color:#00ff00; font-weight:bold;' : '';
+                
+                html = `
+                    <div style="border-bottom:1px solid #555; margin-bottom:5px;">
+                        <b style="font-size:1.1em;">${selectedObject.species}</b> 
+                        <span style="font-size:1.3em; margin-left:5px;">${em}</span>
+                    </div>
+                    Lv.${selectedObject.level || 1} / ${selectedObject.personality || "不明"}<br>
+                    HP: <span style="${hpStyle}">${Math.floor(selectedObject.hp)}</span> / ${selectedObject.hpMax}<br>
+                    空腹: ${Math.floor(selectedObject.hunger || 0)}%<br>
+                    耐性: 🔥${selectedObject.heatResist || 0} ❄️${selectedObject.coldResist || 0}
+                `;
+            } 
+            // 食べ物・エサ・死体の場合
+            else {
+                const type = selectedObject.type || (selectedObject.isCorpse ? "corpse" : "object");
+                const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
+                const icon = icons[type] || '📦';
+                
+                html = `
+                    <div style="border-bottom:1px solid #555; margin-bottom:5px;">
+                        <b style="font-size:1.1em;">${icon} ${type.toUpperCase()}</b>
+                    </div>
+                    状態: フィールドオブジェクト<br>
+                    座標: X:${Math.floor(selectedObject.x)} Y:${Math.floor(selectedObject.y)}
+                `;
+            }
+
+            // 前回の内容と違う場合だけ書き換える（負荷軽減）
+            if (statsEl.innerHTML !== html) {
+                statsEl.innerHTML = html;
+            }
+        } catch (e) {
+            // エラー時は何もしない（フリーズを防止）
+        }
+    }, 100);
+})();
+
     // UIの監視を開始（既存システムを壊さずに拡張する安全な方法）
     uiObserver.observe(statsEl, { childList: true, characterData: true, subtree: true });
 })();
