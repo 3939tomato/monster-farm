@@ -956,3 +956,75 @@ window.addEventListener('keydown', (e) => {
         }
     }, 100); // 1秒間に10回チェック
 })();
+
+// ==========================================
+// 睡眠回復＆クリック時UI上書きシステム（JS/HTML用）
+// ==========================================
+(function() {
+    // 1. 睡眠中（💤）のHP回復（1秒ごとに安全に実行）
+    setInterval(() => {
+        if (typeof monsters !== 'undefined' && Array.isArray(monsters)) {
+            monsters.forEach(m => {
+                if (m.emotion === '💤' && !m.isDead && m.hp < m.hpMax) {
+                    m.hp += 2; // 睡眠時の回復量
+                    if (m.hp > m.hpMax) m.hp = m.hpMax;
+                }
+            });
+        }
+    }, 1000);
+
+    // 2. クリックした時のUI表示（元の処理が終わった直後に上書きする）
+    document.addEventListener('mousedown', () => {
+        // 元のクリック処理が完了して selectedObject がセットされるのを少し待つ
+        setTimeout(() => {
+            const statsEl = document.getElementById('targetStats');
+            if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
+
+            const obj = selectedObject;
+            let html = "";
+
+            // モンスターの場合（speciesやhpMaxがあるかで判定）
+            if (obj.species !== undefined || obj.hpMax !== undefined) {
+                const em = obj.emotion || "";
+                const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
+                
+                html = `
+                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
+                        <span style="font-size:1.5em; vertical-align:middle;">${em}</span>
+                        <b style="font-size:1.2em; margin-left:8px;">${obj.species || "モンスター"}</b>
+                    </div>
+                    <div>
+                        Lv.${obj.level || 1} [${obj.personality || "普通"}]<br>
+                        HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
+                        空腹: ${Math.floor(obj.hunger || 0)}%<br>
+                        パワー: ${obj.power || 0} / スピード: ${Math.floor((obj.speedVal || 0) * 10)}<br>
+                        耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
+                    </div>
+                `;
+            } 
+            // 食べ物（エサ）などの場合
+            else {
+                const type = obj.type || (obj.isCorpse ? "corpse" : "item");
+                const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
+                const icon = icons[type] || '📦';
+                const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
+                const recovery = obj.value || obj.nutrition || 20;
+
+                html = `
+                    <div style="border-bottom:1px solid #555; margin-bottom:5px; padding-bottom:5px;">
+                        <span style="font-size:1.5em; vertical-align:middle;">${icon}</span>
+                        <b style="font-size:1.2em; margin-left:8px;">${label}</b>
+                    </div>
+                    <div>
+                        <span style="color:#ffeb3b; font-weight:bold;">回復量: 🍖 ${recovery}</span><br>
+                        状態: フィールドアイテム<br>
+                        座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                    </div>
+                `;
+            }
+
+            // HTMLを書き換え
+            statsEl.innerHTML = html;
+        }, 50); // 0.05秒遅らせて実行（フリーズ防止と上書き確実化のため）
+    });
+})();
