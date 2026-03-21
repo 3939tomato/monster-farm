@@ -883,3 +883,76 @@ window.addEventListener('keydown', (e) => {
         }
     }, 200); // 0.2秒ごとにチェック
 })();
+
+// ==========================================
+// 【最終兵器】UI強制書き換え・アイコン＆回復量表示
+// ==========================================
+(function() {
+    // 既存のタイマーをすべて掃除
+    if (window.masterUiTimer) clearInterval(window.masterUiTimer);
+
+    // 0.1秒ごとに「今の表示内容」をチェックし、足りなければ強制的に書き換える
+    window.masterUiTimer = setInterval(() => {
+        const statsEl = document.getElementById('targetStats');
+        // 選択されているものがなければ何もしない
+        if (!statsEl || typeof selectedObject === 'undefined' || !selectedObject) return;
+
+        const obj = selectedObject;
+        let finalHtml = "";
+
+        // --- 判定：モンスターか、エサか ---
+        const isMonster = obj.species !== undefined || obj.hpMax !== undefined;
+
+        if (isMonster) {
+            // 【モンスターの場合】
+            const em = obj.emotion || "通常";
+            const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
+            
+            finalHtml = `
+                <div style="border-bottom:2px solid #666; margin-bottom:8px; padding-bottom:5px;">
+                    <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
+                    <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>
+                </div>
+                <div style="line-height:1.6; font-family:monospace;">
+                    <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
+                    HP: <span style="color:${hpColor}; font-weight:bold;">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
+                    空腹: ${Math.floor(obj.hunger || 0)}%<br>
+                    パワー: ${obj.power || 0} / 速さ: ${Math.floor((obj.speedVal || 0) * 10)}<br>
+                    耐性: 🔥${obj.heatResist || 0} ❄️${obj.coldResist || 0}
+                </div>
+            `;
+        } else {
+            // 【エサ・アイテム・なきがらの場合】
+            const type = obj.type || (obj.isCorpse ? "corpse" : "item");
+            const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄', corpse: '🦴' };
+            const icon = icons[type] || '📦';
+            const label = type === 'corpse' ? 'なきがら' : type.toUpperCase();
+            
+            // 回復量の計算（20を基本値とし、設定があればそれを使う）
+            const recovery = obj.value || obj.nutrition || 20;
+
+            finalHtml = `
+                <div style="border-bottom:2px solid #666; margin-bottom:8px; padding-bottom:5px;">
+                    <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
+                    <b style="font-size:1.3em; margin-left:8px;">${label}</b>
+                </div>
+                <div style="line-height:1.6;">
+                    <span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">
+                        回復量: 🍖 ${recovery}
+                    </span><br>
+                    <div style="margin-top:8px; color:#ccc; font-size:0.9em;">
+                        状態: フィールドオブジェクト<br>
+                        座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 【ここが重要】
+        // もし今の表示に「アイコン」や「回復量」が含まれていなければ、強制的に書き換える
+        // これにより、元々のプログラムの上書きをさらに「上書き返し」します
+        if (!statsEl.innerHTML.includes('font-size:1.6em')) {
+            statsEl.innerHTML = finalHtml;
+        }
+    }, 100); // 1秒間に10回チェック
+})();
