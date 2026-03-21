@@ -1116,3 +1116,33 @@ window.addEventListener('keydown', function(e) {
             });
     };
 })();
+
+// ==========================================
+// なきがら表記 修正専用スクリプト
+// ==========================================
+(function() {
+    function fixCorpseName() {
+        // 選択されているオブジェクトを確認
+        if (typeof selectedObject !== 'undefined' && selectedObject) {
+            // なきがら（isCorpseがtrue）かどうかの判定
+            if (selectedObject.isCorpse || selectedObject.type === 'corpse') {
+                const statsEl = document.getElementById('superTargetStats');
+                if (statsEl) {
+                    // もし表示が「ITEM」や「ITEM (エサ)」になっていたら「なきがら」に書き換える
+                    // innerHTMLを直接書き換えるのではなく、特定のワードのみ置換
+                    if (statsEl.innerHTML.includes('ITEM') || statsEl.innerHTML.includes('CORPSE')) {
+                        statsEl.innerHTML = statsEl.innerHTML
+                            .replace(/ITEM/g, 'なきがら')
+                            .replace(/CORPSE/g, 'なきがら')
+                            .replace(/📦/g, '🦴'); // アイコンも箱から骨に変更
+                    }
+                }
+            }
+        }
+        // 毎フレーム実行して上書きを監視
+        requestAnimationFrame(fixCorpseName);
+    }
+
+    // 実行開始
+    fixCorpseName();
+})();
