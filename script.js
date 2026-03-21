@@ -988,3 +988,18 @@ window.addEventListener('keydown', (e) => {
         updateSuperUI(); 
     }
 })();
+
+// ボタンをクリックした後に「選択状態」を強制解除する（スペース連打防止）
+window.addEventListener('click', function(e) {
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
+        document.activeElement.blur(); // フォーカスを外す命令
+    }
+});
+
+// スペースキーそのものの「ページスクロール」などの標準機能を無効化したい場合
+window.addEventListener('keydown', function(e) {
+    if (e.code === 'Space') {
+        // もしゲーム内でスペースを使いたい予定がないなら、以下を有効にすると完全に止まります
+        // e.preventDefault(); 
+    }
+});
