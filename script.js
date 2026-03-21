@@ -1003,3 +1003,116 @@ window.addEventListener('keydown', function(e) {
         // e.preventDefault(); 
     }
 });
+
+// ==========================================
+// 【拡張】突然変異キラキラエフェクト ＆ README表示システム
+// ==========================================
+(function() {
+    // ======================================
+    // システム1：突然変異キラキラ描画ロジック
+    // ======================================
+    // 既存のMonster.prototype.draw（本体描画や感情アイコン描画）を拡張します。
+    // 元の描画処理がすでに拡張されている可能性（前回のアイコン表示など）を考慮し、
+    // 現在のdraw処理をorigDrawとしてバックアップします。
+    
+    const origDraw = Monster.prototype.draw;
+
+    Monster.prototype.draw = function() {
+        // 元の描画（本体と感情アイコン）を実行
+        origDraw.call(this);
+
+        // --- ここからキラキラエフェクト ---
+        // 前回のコードで付与された「obj.isMutant」フラグがtrueの個体だけが対象
+        if (this.isMutant) {
+            // ズームとカメラの計算を安全に取得（画面上の座標を計算）
+            const z = typeof zoom !== 'undefined' ? zoom : 1;
+            const cx = typeof camX !== 'undefined' ? camX : 0;
+            const cy = typeof camY !== 'undefined' ? camY : 0;
+            const ctx = typeof gCtx !== 'undefined' ? gCtx : document.getElementById('gameCanvas').getContext('2d');
+
+            // 画面上の座標を計算
+            let sx = (this.x - cx) * z;
+            let sy = (this.y - cy) * z;
+
+            // 画面外なら描画しない（パフォーマンス対策）
+            if (sx < -50 || sx > (typeof gCanvas !== 'undefined' ? gCanvas.width : 2000) + 50 || 
+                sy < -50 || sy > (typeof gCanvas !== 'undefined' ? gCanvas.height : 2000) + 50) return;
+
+            // --- キラキラの描画ロジック ---
+            // 1フレームごとに、モンスターの周囲にランダムなドットを描画します。
+            
+            // 本体サイズに合わせてキラキラの範囲を調整
+            const displaySize = 60 + (this.level - 1) * 4;
+            const monsterSize = displaySize * z; 
+
+            // キラキラの個数（1フレームごとに3〜6個をランダムに）
+            const particleCount = 3 + Math.floor(Math.random() * 4);
+            // キラキラのサイズ
+            const particleSize = Math.max(2, 4 * z); 
+
+            for (let i = 0; i < particleCount; i++) {
+                // 色（黄色、白、水色のキラキラ）
+                const colors = ['#fff176', '#ffffff', '#81d4fa'];
+                ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+                
+                // モンスターの中心からのオフセット（少し外側まで広がるように）
+                // -10*z〜+10*zの範囲でランダム
+                const rangeOffset = 10 * z;
+                const px = sx + (Math.random() * (monsterSize + rangeOffset * 2)) - rangeOffset;
+                const py = sy + (Math.random() * (monsterSize + rangeOffset * 2)) - rangeOffset;
+                
+                // Canvasに四角形（ドット）を描画
+                ctx.fillRect(px, py, particleSize, particleSize);
+            }
+        }
+    };
+
+
+    // ======================================
+    // システム2：README表示ロジック
+    // ======================================
+    
+    // 説明画面（モーダル）を閉じる関数（グローバルスコープにする）
+    window.closeReadme = function() {
+        const overlay = document.getElementById('readmeOverlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    };
+
+    // 説明画面を開き、README.mdを読み込んで表示する関数（グローバルスコープにする）
+    window.openReadme = function() {
+        const overlay = document.getElementById('readmeOverlay');
+        const textEl = document.getElementById('readmeText');
+        
+        if (!overlay || !textEl) return;
+
+        // 画面を表示
+        overlay.style.display = 'flex';
+        // 一旦メニューパネルは閉じる
+        if(typeof toggleMenu === 'function') toggleMenu();
+
+        // テキストエリアを「読み込み中」の状態にする
+        textEl.innerText = "読み込み中...";
+
+        // --- README.mdファイルの読み込み (Fetch API) ---
+        // 同じフォルダにある「README.md」という名前のファイルを読み込みます。
+        fetch('README.md')
+            .then(response => {
+                // ファイルが見つからない、またはエラーの場合
+                if (!response.ok) {
+                    throw new Error('README.md が見つからないか、読み込めませんでした。');
+                }
+                return response.text(); // テキストとして取得
+            })
+            .then(text => {
+                // テキストを表示エリアに挿入
+                textEl.innerText = text;
+            })
+            .catch(error => {
+                // エラー時の表示
+                console.error('Fetch error:', error);
+                textEl.innerText = `エラー: README.md を読み込めませんでした。\n\n【原因の可能性】\n1. 同じフォルダに「README.md」ファイルがない。\n2. ブラウザのセキュリティ制限（ローカル環境で直接HTMLを開いている場合など）。\n   -> VSCodeの「Live Server」などのローカルサーバー環境で実行してください。\n\n（詳細エラー: ${error.message})`;
+            });
+    };
+})();
