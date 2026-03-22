@@ -1542,3 +1542,47 @@ window.addEventListener('keydown', function(e) {
         }
     }, 1000);
 })();
+
+(function() {
+    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+
+    function injectAttributesToBook() {
+        const grid = document.getElementById('bookGrid'); // HTMLのID [cite: 10]
+        if (!grid || typeof speciesBook === 'undefined') return;
+
+        const buttons = grid.getElementsByTagName('button');
+        for (let btn of buttons) {
+            const btnText = btn.innerText.split(' ')[0].trim();
+            const data = speciesBook.find(s => s.species === btnText);
+            if (data && !btn.querySelector('.attr-badge')) {
+                const attr = data.attribute || "ノーマル";
+                const icon = attrIcons[attr] || "⭐";
+                btn.style.position = "relative";
+                btn.style.paddingRight = "60px";
+                const badge = document.createElement('span');
+                badge.className = 'attr-badge';
+                badge.style.cssText = "position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:11px; background:rgba(0,0,0,0.5); color:#fff; padding:2px 6px; border-radius:4px; pointer-events:none;";
+                badge.innerHTML = `${icon} ${attr}`;
+                btn.appendChild(badge);
+            }
+        }
+    }
+
+    if (typeof window.saveAndGoFarm === 'function') {
+        const originalSave = window.saveAndGoFarm;
+        window.saveAndGoFarm = function() {
+            const selectedAttr = document.getElementById('attrInput').value;
+            originalSave();
+            if (speciesBook.length > 0) {
+                speciesBook[speciesBook.length - 1].attribute = selectedAttr;
+            }
+        };
+    }
+
+    setInterval(() => {
+        const bookScreen = document.getElementById('bookScreen'); // HTMLのID [cite: 9]
+        if (bookScreen && bookScreen.classList.contains('active')) {
+            injectAttributesToBook();
+        }
+    }, 500);
+})();
