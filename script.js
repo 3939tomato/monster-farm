@@ -1458,131 +1458,64 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【完全版】図鑑属性表示 ＆ セーブ連動システム
+// 【図鑑属性・完全同期システム】
 // ==========================================
 (function() {
     const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
 
-    // --- 1. モンスター保存時に「図鑑データ」にも属性を書き込む ---
+    // --- A. 保存時に属性をデータに組み込む ---
     const originalSave = window.saveAndGoFarm;
     window.saveAndGoFarm = function() {
-        if (typeof originalSave === 'function') {
-            const attrVal = document.getElementById('attrInput')?.value || "ノーマル";
-            
-            // 元の保存処理を実行
-            originalSave();
-            
-            // 図鑑の最新データに属性を覚えさせる
-            if (typeof speciesBook !== 'undefined' && speciesBook.length > 0) {
-                speciesBook[speciesBook.length - 1].attribute = attrVal;
-            }
+        const selectedAttr = document.getElementById('attrInput').value;
+        
+        // 元の保存処理を実行
+        if (typeof originalSave === 'function') originalSave();
+        
+        // 保存された最新の種族データに属性を書き込む
+        if (typeof speciesBook !== 'undefined' && speciesBook.length > 0) {
+            speciesBook[speciesBook.length - 1].attribute = selectedAttr;
         }
     };
 
-    // --- 2. 図鑑の描画処理を「属性ラベル付き」にアップグレードする ---
-    // 図鑑を更新する関数を丸ごと拡張（フック）します
-    if (typeof window.updateSpeciesBook === 'function') {
-        const _updateSpeciesBook = window.updateSpeciesBook;
-        window.updateSpeciesBook = function() {
-            // まずは元の関数でボタンを作らせる
-            _updateSpeciesBook();
-
-            // その直後に属性ラベルをねじ込む
-            const bookDiv = document.getElementById('speciesBook');
-            if (!bookDiv) return;
-
-            const buttons = bookDiv.getElementsByTagName('button');
-            for (let btn of buttons) {
-                // ボタンのテキスト（種族名）から図鑑データを逆引き
-                const speciesName = btn.innerText.split(' ')[0].trim();
-                const data = speciesBook.find(s => s.species === speciesName);
-                
-                if (data && !btn.querySelector('.attr-label')) {
-                    const attr = data.attribute || "ノーマル";
-                    const icon = attrIcons[attr] || "⭐";
-
-                    // ボタンの見た目を整える
-                    btn.style.display = "flex";
-                    btn.style.justifyContent = "space-between";
-                    btn.style.alignItems = "center";
-                    
-                    const label = document.createElement('span');
-                    label.className = 'attr-label';
-                    label.style.cssText = "font-size:0.75em; background:rgba(0,0,0,0.4); padding:2px 6px; border-radius:10px; margin-left:10px; color:#fff; border:1px solid #555;";
-                    label.innerHTML = `${icon} ${attr}`;
-                    btn.appendChild(label);
-                }
-            }
-        };
-    }
-
-    // --- 3. エディターに属性選択肢を出す（定点チェック） ---
-    setInterval(() => {
-        const dietInput = document.getElementById('dietInput');
-        if (dietInput && !document.getElementById('attrInput')) {
-            const span = document.createElement('span');
-            span.innerHTML = ` 属性: <select id="attrInput" style="background:#222; color:#fff; border:1px solid #555; padding:2px; border-radius:3px;">
-                <option value="ノーマル">ノーマル</option>
-                <option value="火">火</option>
-                <option value="水">水</option>
-                <option value="木">木</option>
-                <option value="光">光</option>
-                <option value="闇">闇</option>
-            </select>`;
-            dietInput.parentNode.insertBefore(span, dietInput.nextSibling);
-        }
-        
-        // 図鑑が表示されている間、常に属性を同期（念のため）
-        const bookDiv = document.getElementById('speciesBook');
-        if (bookDiv && bookDiv.style.display !== 'none') {
-            const buttons = bookDiv.getElementsByTagName('button');
-            if (buttons.length > 0 && !buttons[0].querySelector('.attr-label')) {
-                window.updateSpeciesBook();
-            }
-        }
-    }, 1000);
-})();
-
-(function() {
-    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
-
-    function injectAttributesToBook() {
-        const grid = document.getElementById('bookGrid'); // HTMLのID [cite: 10]
+    // --- B. 図鑑の表示（bookGrid）を強制的に書き換える ---
+    function forceUpdateBookUI() {
+        const grid = document.getElementById('bookGrid');
         if (!grid || typeof speciesBook === 'undefined') return;
 
         const buttons = grid.getElementsByTagName('button');
+        
         for (let btn of buttons) {
-            const btnText = btn.innerText.split(' ')[0].trim();
+            // ボタン内のテキスト（種族名）を取得
+            // 「スライム (5)」のような表示を想定して名前部分だけ切り出し
+            const btnText = btn.innerText.split(' ')[0].split('(')[0].trim();
             const data = speciesBook.find(s => s.species === btnText);
+            
             if (data && !btn.querySelector('.attr-badge')) {
                 const attr = data.attribute || "ノーマル";
                 const icon = attrIcons[attr] || "⭐";
-                btn.style.position = "relative";
-                btn.style.paddingRight = "60px";
+
+                // ボタンのレイアウトを調整
+                btn.style.display = "flex";
+                btn.style.justifyContent = "space-between";
+                btn.style.alignItems = "center";
+                btn.style.minWidth = "150px";
+                
+                // 属性ラベルを作成
                 const badge = document.createElement('span');
                 badge.className = 'attr-badge';
-                badge.style.cssText = "position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:11px; background:rgba(0,0,0,0.5); color:#fff; padding:2px 6px; border-radius:4px; pointer-events:none;";
+                badge.style.cssText = "font-size:11px; background:rgba(0,0,0,0.4); padding:2px 6px; border-radius:4px; color:#fff; margin-left:8px; border:1px solid #666;";
                 badge.innerHTML = `${icon} ${attr}`;
+                
                 btn.appendChild(badge);
             }
         }
     }
 
-    if (typeof window.saveAndGoFarm === 'function') {
-        const originalSave = window.saveAndGoFarm;
-        window.saveAndGoFarm = function() {
-            const selectedAttr = document.getElementById('attrInput').value;
-            originalSave();
-            if (speciesBook.length > 0) {
-                speciesBook[speciesBook.length - 1].attribute = selectedAttr;
-            }
-        };
-    }
-
+    // 図鑑画面（bookScreen）が表示されている間、ずっと監視して属性を付ける
     setInterval(() => {
-        const bookScreen = document.getElementById('bookScreen'); // HTMLのID [cite: 9]
-        if (bookScreen && bookScreen.classList.contains('active')) {
-            injectAttributesToBook();
+        const bookScreen = document.getElementById('bookScreen');
+        if (bookScreen && bookScreen.style.display !== 'none') {
+            forceUpdateBookUI();
         }
     }, 500);
 })();
