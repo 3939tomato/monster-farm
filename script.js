@@ -1369,3 +1369,90 @@ window.addEventListener('keydown', function(e) {
         requestAnimationFrame(window.updateSuperUIWithMutation);
     };
 })();
+
+// ==========================================
+// 【修正版】属性表示（クリックUI ＆ 図鑑）
+// ==========================================
+(function() {
+    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+
+    // --- 1. クリック時のステータス画面に属性を「強制挿入」する ---
+    // 既存のUI更新に相乗りせず、独立して表示を書き換えます
+    function forceAttributeDisplay() {
+        if (typeof selectedObject !== 'undefined' && selectedObject && selectedObject.species) {
+            const statsEl = document.getElementById('superTargetStats');
+            if (statsEl && !statsEl.innerHTML.includes('属性:')) {
+                const attr = selectedObject.attribute || "ノーマル";
+                const icon = attrIcons[attr] || "⭐";
+                
+                // 名前が表示されている箇所のすぐ下に属性行を挿入
+                // 既存のHTML構造を壊さないようにprepend（先頭に追加）
+                const attrTag = `<div id="attrDisplayTag" style="margin-bottom:5px; font-weight:bold; color:#fff; background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px; display:inline-block; border:1px solid #777;">
+                    属性: ${icon} ${attr}
+                </div><br>`;
+                
+                if (!document.getElementById('attrDisplayTag')) {
+                    statsEl.innerHTML = attrTag + statsEl.innerHTML;
+                }
+            }
+        }
+        requestAnimationFrame(forceAttributeDisplay);
+    }
+    forceAttributeDisplay();
+
+
+    // --- 2. 図鑑（種族リスト）に属性を表示する ---
+    // 図鑑を更新する関数（updateSpeciesBook）を拡張します
+    if (typeof window.updateSpeciesBook === 'function') {
+        const originalUpdateSpeciesBook = window.updateSpeciesBook;
+        
+        window.updateSpeciesBook = function() {
+            // まずは元の図鑑更新処理を実行
+            originalUpdateSpeciesBook();
+            
+            // 生成されたボタン類をスキャンして属性を書き込む
+            const bookDiv = document.getElementById('speciesBook');
+            if (!bookDiv) return;
+            
+            const items = bookDiv.getElementsByClassName('species-item'); // 各項目のクラス名（環境に合わせて調整）
+            const buttons = bookDiv.getElementsByTagName('button');
+
+            // speciesBook（図鑑データ）をループして、表示されている名前に属性を足す
+            if (typeof speciesBook !== 'undefined') {
+                for (let i = 0; i < speciesBook.length; i++) {
+                    const data = speciesBook[i];
+                    const attr = data.attribute || "ノーマル";
+                    const icon = attrIcons[attr] || "⭐";
+                    
+                    // 図鑑内の該当するボタンやテキストを探して書き換え
+                    for (let btn of buttons) {
+                        if (btn.innerText.includes(data.species) && !btn.innerText.includes('【')) {
+                            btn.innerHTML = `${data.species} <small style="color:#aaa;">【${icon}${attr}】</small>`;
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // --- 3. 属性選択ドロップダウンの設置（再確認） ---
+    function ensureAttrInput() {
+        const dietInput = document.getElementById('dietInput');
+        if (dietInput && !document.getElementById('attrInput')) {
+            const container = dietInput.parentElement;
+            const label = document.createElement('span');
+            label.innerHTML = ` 属性: <select id="attrInput" style="padding:2px; background:#333; color:#fff; border:1px solid #777;">
+                <option value="ノーマル">ノーマル</option>
+                <option value="火">火</option>
+                <option value="水">水</option>
+                <option value="木">木</option>
+                <option value="光">光</option>
+                <option value="闇">闇</option>
+            </select>`;
+            container.insertBefore(label, dietInput.nextSibling);
+        }
+    }
+    // エディターを開くたびにチェック
+    setInterval(ensureAttrInput, 1000);
+
+})();
