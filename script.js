@@ -1519,3 +1519,88 @@ window.addEventListener('keydown', function(e) {
         }
     }, 500);
 })();
+
+// ==========================================
+// 【最終兵器】図鑑への属性表示（自動監視・絶対表示システム）
+// ==========================================
+(function() {
+    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+
+    // --- 1. 保存時に確実に図鑑データへ属性を記録する ---
+    const origSave = window.saveAndGoFarm;
+    window.saveAndGoFarm = function() {
+        // エディターの属性入力欄から取得
+        const attrSelect = document.getElementById('attrInput');
+        const selectedAttr = attrSelect ? attrSelect.value : "ノーマル";
+        
+        // 元のセーブ処理を実行
+        if (typeof origSave === 'function') origSave();
+        
+        // 直後に追加された最新の種族データへ属性を書き込む
+        if (typeof speciesBook !== 'undefined' && speciesBook.length > 0) {
+            speciesBook[speciesBook.length - 1].attribute = selectedAttr;
+        }
+    };
+
+    // --- 2. 図鑑（bookGrid）の変更を常に監視してバッジを付ける ---
+    const bookGrid = document.getElementById('bookGrid'); // HTMLから図鑑の枠を取得
+    
+    if (bookGrid) {
+        // 監視システム（MutationObserver）の設定
+        const observer = new MutationObserver((mutations) => {
+            // バッジを追加する処理自体で無限ループしないように、一時的に監視をストップ
+            observer.disconnect();
+
+            // 図鑑の中にあるすべてのボタンを取得
+            const buttons = bookGrid.querySelectorAll('button');
+            
+            buttons.forEach((btn) => {
+                // すでに属性バッジが付いていれば何もしない
+                if (btn.querySelector('.attr-badge')) return;
+
+                // どの種族のボタンかを判定する
+                let attr = "ノーマル";
+                
+                if (typeof speciesBook !== 'undefined') {
+                    // ボタンに設定されている「onclick="spawnMore(数字)"」から番号を抜き出す
+                    const onclickStr = btn.getAttribute('onclick');
+                    let matchIndex = -1;
+                    if (onclickStr) {
+                        const match = onclickStr.match(/\d+/);
+                        if (match) matchIndex = parseInt(match[0], 10);
+                    }
+                    
+                    // 番号が分かれば、そこから正確な属性を取得
+                    if (matchIndex >= 0 && speciesBook[matchIndex]) {
+                        attr = speciesBook[matchIndex].attribute || "ノーマル";
+                    } else {
+                        // 番号が取れなかった時の予備（ボタンの文字から探す）
+                        const data = speciesBook.find(s => btn.innerText.includes(s.species));
+                        if (data) attr = data.attribute || "ノーマル";
+                    }
+                }
+
+                // 属性バッジ（ラベル）の作成
+                const icon = attrIcons[attr] || "⭐";
+                const badge = document.createElement('span');
+                badge.className = 'attr-badge';
+                badge.style.cssText = "display:inline-block; font-size:12px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 8px; border-radius:12px; margin-left:10px; border:1px solid #777; pointer-events:none;";
+                badge.innerHTML = `${icon} ${attr}`;
+                
+                // ボタンのレイアウトを横並びに整えてバッジを追加
+                btn.style.display = "inline-flex";
+                btn.style.justifyContent = "space-between";
+                btn.style.alignItems = "center";
+                btn.style.textAlign = "left";
+                
+                btn.appendChild(badge);
+            });
+
+            // バッジを付け終わったら監視を再開
+            observer.observe(bookGrid, { childList: true, subtree: true });
+        });
+
+        // 最初の監視スタート
+        observer.observe(bookGrid, { childList: true, subtree: true });
+    }
+})();
