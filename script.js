@@ -1458,59 +1458,87 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【修正版】図鑑（種族リスト）への属性表示
+// 【完全版】図鑑属性表示 ＆ セーブ連動システム
 // ==========================================
 (function() {
     const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
 
-    function refreshSpeciesBookAttributes() {
-        const bookDiv = document.getElementById('speciesBook');
-        if (!bookDiv || typeof speciesBook === 'undefined') return;
-
-        // 図鑑内のすべてのボタンをチェック
-        const buttons = bookDiv.getElementsByTagName('button');
-        
-        for (let btn of buttons) {
-            // onclick属性から、どの種族（インデックス）のボタンか特定する
-            // 例: spawnMore(0) なら インデックス0
-            const onclickAttr = btn.getAttribute('onclick');
-            if (onclickAttr && onclickAttr.includes('spawnMore')) {
-                const match = onclickAttr.match(/\d+/);
-                if (match) {
-                    const index = parseInt(match[0]);
-                    const data = speciesBook[index];
-                    
-                    if (data) {
-                        const attr = data.attribute || "ノーマル";
-                        const icon = attrIcons[attr] || "⭐";
-                        
-                        // すでに属性ラベルが付いているかチェック
-                        if (!btn.querySelector('.attr-label')) {
-                            // ボタンのデザインを少し調整して属性を追加
-                            btn.style.display = "flex";
-                            btn.style.justifyContent = "space-between";
-                            btn.style.alignItems = "center";
-                            btn.style.marginBottom = "3px";
-                            
-                            const label = document.createElement('span');
-                            label.className = 'attr-label';
-                            label.style.fontSize = '0.8em';
-                            label.style.background = 'rgba(0,0,0,0.3)';
-                            label.style.padding = '2px 5px';
-                            label.style.borderRadius = '4px';
-                            label.style.marginLeft = '10px';
-                            label.style.color = '#ddd';
-                            label.innerHTML = `${icon} ${attr}`;
-                            
-                            btn.appendChild(label);
-                        }
-                    }
-                }
+    // --- 1. モンスター保存時に「図鑑データ」にも属性を書き込む ---
+    const originalSave = window.saveAndGoFarm;
+    window.saveAndGoFarm = function() {
+        if (typeof originalSave === 'function') {
+            const attrVal = document.getElementById('attrInput')?.value || "ノーマル";
+            
+            // 元の保存処理を実行
+            originalSave();
+            
+            // 図鑑の最新データに属性を覚えさせる
+            if (typeof speciesBook !== 'undefined' && speciesBook.length > 0) {
+                speciesBook[speciesBook.length - 1].attribute = attrVal;
             }
         }
+    };
+
+    // --- 2. 図鑑の描画処理を「属性ラベル付き」にアップグレードする ---
+    // 図鑑を更新する関数を丸ごと拡張（フック）します
+    if (typeof window.updateSpeciesBook === 'function') {
+        const _updateSpeciesBook = window.updateSpeciesBook;
+        window.updateSpeciesBook = function() {
+            // まずは元の関数でボタンを作らせる
+            _updateSpeciesBook();
+
+            // その直後に属性ラベルをねじ込む
+            const bookDiv = document.getElementById('speciesBook');
+            if (!bookDiv) return;
+
+            const buttons = bookDiv.getElementsByTagName('button');
+            for (let btn of buttons) {
+                // ボタンのテキスト（種族名）から図鑑データを逆引き
+                const speciesName = btn.innerText.split(' ')[0].trim();
+                const data = speciesBook.find(s => s.species === speciesName);
+                
+                if (data && !btn.querySelector('.attr-label')) {
+                    const attr = data.attribute || "ノーマル";
+                    const icon = attrIcons[attr] || "⭐";
+
+                    // ボタンの見た目を整える
+                    btn.style.display = "flex";
+                    btn.style.justifyContent = "space-between";
+                    btn.style.alignItems = "center";
+                    
+                    const label = document.createElement('span');
+                    label.className = 'attr-label';
+                    label.style.cssText = "font-size:0.75em; background:rgba(0,0,0,0.4); padding:2px 6px; border-radius:10px; margin-left:10px; color:#fff; border:1px solid #555;";
+                    label.innerHTML = `${icon} ${attr}`;
+                    btn.appendChild(label);
+                }
+            }
+        };
     }
 
-    // 図鑑が開かれたり更新されたりするタイミングに合わせて、高頻度でチェックを実行
-    setInterval(refreshSpeciesBookAttributes, 500);
-
+    // --- 3. エディターに属性選択肢を出す（定点チェック） ---
+    setInterval(() => {
+        const dietInput = document.getElementById('dietInput');
+        if (dietInput && !document.getElementById('attrInput')) {
+            const span = document.createElement('span');
+            span.innerHTML = ` 属性: <select id="attrInput" style="background:#222; color:#fff; border:1px solid #555; padding:2px; border-radius:3px;">
+                <option value="ノーマル">ノーマル</option>
+                <option value="火">火</option>
+                <option value="水">水</option>
+                <option value="木">木</option>
+                <option value="光">光</option>
+                <option value="闇">闇</option>
+            </select>`;
+            dietInput.parentNode.insertBefore(span, dietInput.nextSibling);
+        }
+        
+        // 図鑑が表示されている間、常に属性を同期（念のため）
+        const bookDiv = document.getElementById('speciesBook');
+        if (bookDiv && bookDiv.style.display !== 'none') {
+            const buttons = bookDiv.getElementsByTagName('button');
+            if (buttons.length > 0 && !buttons[0].querySelector('.attr-label')) {
+                window.updateSpeciesBook();
+            }
+        }
+    }, 1000);
 })();
