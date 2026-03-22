@@ -1146,3 +1146,226 @@ window.addEventListener('keydown', function(e) {
     // 実行開始
     fixCorpseName();
 })();
+
+// ==========================================
+// 【属性システム】相性バトル＆ステータス表示
+// ==========================================
+(function() {
+    // --- 1. エディター画面に「属性」の選択肢を自動追加 ---
+    const dietInput = document.getElementById('dietInput');
+    if (dietInput && !document.getElementById('attrInput')) {
+        const attrSpan = document.createElement('span');
+        attrSpan.innerHTML = ` 属性: <select id="attrInput" style="margin-right:10px; padding:2px;">
+            <option value="ノーマル">ノーマル</option>
+            <option value="火">火</option>
+            <option value="水">水</option>
+            <option value="木">木</option>
+            <option value="光">光</option>
+            <option value="闇">闇</option>
+        </select>`;
+        // 食性の右側に挿入
+        dietInput.parentNode.insertBefore(attrSpan, dietInput.nextSibling);
+    }
+
+    // --- 2. 新しく放流したモンスターに属性を付与 ---
+    if (!window.origSaveAndGoFarmForAttr) {
+        window.origSaveAndGoFarmForAttr = window.saveAndGoFarm;
+        window.saveAndGoFarm = function() { // [cite: 129]
+            const attrEl = document.getElementById('attrInput');
+            const selectedAttr = attrEl ? attrEl.value : "ノーマル";
+            const prevLen = typeof monsters !== 'undefined' ? monsters.length : 0;
+            
+            // 元のセーブ処理（放流処理）を実行
+            window.origSaveAndGoFarmForAttr(); // [cite: 132]
+            
+            // 新しく追加された個体に属性をセット
+            for (let i = prevLen; i < monsters.length; i++) {
+                monsters[i].attribute = selectedAttr;
+            }
+            // 図鑑（speciesBook）にも記憶させる
+            if (speciesBook && speciesBook.length > 0) {
+                speciesBook[speciesBook.length - 1].attribute = selectedAttr;
+            }
+        };
+    }
+
+    // --- 3. 図鑑からの追加放流時にも属性を引き継ぐ ---
+    if (!window.origSpawnMoreForAttr) {
+        window.origSpawnMoreForAttr = window.spawnMore;
+        window.spawnMore = function(index) { // [cite: 135]
+            const prevLen = typeof monsters !== 'undefined' ? monsters.length : 0;
+            window.origSpawnMoreForAttr(index); // [cite: 136]
+            
+            const selectedAttr = speciesBook[index].attribute || "ノーマル";
+            for (let i = prevLen; i < monsters.length; i++) {
+                monsters[i].attribute = selectedAttr;
+            }
+        };
+    }
+
+    // --- 4. 繁殖（赤ちゃん）や、古いデータへの属性自動付与 ---
+    setInterval(() => {
+        if (typeof monsters === 'undefined') return;
+        monsters.forEach(m => {
+            if (!m.attribute) {
+                // 同じ種族の親を探して遺伝（いなければノーマル）
+                const parent = monsters.find(p => p !== m && p.species === m.species && p.attribute);
+                m.attribute = parent ? parent.attribute : "ノーマル";
+            }
+        });
+    }, 1000);
+
+    // --- 5. バトルシステム：指定された属性相性の計算 ---
+    if (!Monster.prototype.origUpdateForAttr) {
+        Monster.prototype.origUpdateForAttr = Monster.prototype.update;
+        
+        Monster.prototype.update = function() {
+            // 元の戦闘処理を一度スキップさせるための細工（動きや寿命計算だけを先にやらせる）
+            let realTimer = this.socialTimer;
+            this.socialTimer = 9999; 
+            
+            let isAlive = this.origUpdateForAttr();
+            if (!isAlive) return false;
+            
+            // 細工を戻す
+            this.socialTimer = realTimer;
+            
+            // --- 新しい戦闘処理（属性相性入り） ---
+            if (this.socialTimer-- <= 0) { // [cite: 67]
+                this.socialTimer = 20 + Math.random() * 10;
+                
+                // 群れ・繁殖のための仲間リスト更新（元コードと同じ）
+                this.cachedAllies = monsters.filter(m => m !== this && m.species === this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 300); // [cite: 68]
+                
+                let target = null;
+                if (this.diet === "肉食") target = monsters.find(m => m !== this && !m.isDead && m.species !== this.species && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100); // [cite: 69]
+                else if (this.diet === "雑食") target = monsters.find(m => !m.isDead && m.diet === "草食" && Math.sqrt((this.x-m.x)**2+(this.y-m.y)**2) < 100); // [cite: 70]
+                
+                if (target) { // [cite: 71]
+                    // ご指定の相性定義（strong: 強い相手, weak: 弱い相手）
+                    const matchups = {
+                        "火": { strong: "木", weak: "水" },
+                        "水": { strong: "火", weak: "木" },
+                        "木": { strong: "水", weak: "火" },
+                        "ノーマル": { strong: "光", weak: "闇" },
+                        "闇": { strong: "ノーマル", weak: "光" },
+                        "光": { strong: "闇", weak: "ノーマル" }
+                    };
+                    
+                    let myAttr = this.attribute || "ノーマル";
+                    let tgAttr = target.attribute || "ノーマル";
+                    
+                    // こちらの攻撃の倍率（弱点なら2倍、抵抗なら半分）
+                    let dmgMult = 1.0;
+                    if (matchups[myAttr] && matchups[myAttr].strong === tgAttr) dmgMult = 2.0;
+                    if (matchups[myAttr] && matchups[myAttr].weak === tgAttr) dmgMult = 0.5;
+                    
+                    // 相手の反撃の倍率
+                    let tgDmgMult = 1.0;
+                    if (matchups[tgAttr] && matchups[tgAttr].strong === myAttr) tgDmgMult = 2.0;
+                    if (matchups[tgAttr] && matchups[tgAttr].weak === myAttr) tgDmgMult = 0.5;
+                    
+                    // ダメージ計算
+                    target.hp -= ((this.power / 10) + 1) * dmgMult; // [cite: 71]
+                    this.hp -= ((target.power / 20) + 0.5) * tgDmgMult; // [cite: 72]
+                    
+                    this.fightTimer = 60; // [cite: 73]
+                    target.fightTimer = 60; // [cite: 74]
+                    this.vx = 0; this.vy = 0; // [cite: 75]
+                    
+                    // 弱点を突いた時のログ表示
+                    if (dmgMult === 2.0 && Math.random() < 0.3) {
+                        if (typeof addLog === 'function') addLog(`💥 ばつぐん! ${this.species}(${myAttr}) が ${target.species}(${tgAttr}) に痛撃!`);
+                    }
+                    
+                    if (target.hp <= 0) {
+                        target.die("捕食");
+                        this.gainExp(50); // [cite: 76]
+                    }
+                    if (this.hp <= 0) return this.die("返り討ち"); // [cite: 77]
+                }
+            }
+            return true; // [cite: 98]
+        };
+    }
+
+    // --- 6. ステータスUIに属性を表示 ---
+    window.updateSuperUIWithMutation = function() {
+        if (typeof selectedObject !== 'undefined' && selectedObject) {
+            const obj = selectedObject;
+            let html = "";
+            const statsEl = document.getElementById('superTargetStats');
+            if (!statsEl) return;
+
+            if (obj.species !== undefined || obj.hpMax !== undefined) {
+                const em = obj.emotion || "通常";
+                const hpColor = em === '💤' ? '#00ff00' : '#ffffff';
+                
+                let mutantLabel = "";
+                if (obj.isMutant) {
+                    const typeChar = obj.mutantType || "？";
+                    const typeColor = typeChar === "力" ? "#ff5252" : "#40c4ff";
+                    mutantLabel = `<div style="background:linear-gradient(45deg, #444, #222); border:1px solid ${typeColor}; color:${typeColor}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold; display:inline-block; margin-bottom:5px; box-shadow:0 0 5px ${typeColor};">🌟 突然変異個体【${typeChar}】</div>`;
+                }
+                
+                // 【追加部分：名前の横に属性バッジを表示】
+                const myAttr = obj.attribute || "ノーマル";
+                const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+                const aIcon = attrIcons[myAttr] || "⭐";
+                const attrBadge = `<span style="font-size:0.6em; background:#222; padding:3px 6px; border-radius:12px; border:1px solid #777; vertical-align:middle; margin-left:8px; display:inline-block; line-height:1;">${aIcon} ${myAttr}</span>`;
+
+                const pStyle = (obj.isMutant && obj.mutantType === "力") ? "color:#ff5252; font-weight:bold;" : "";
+                const sStyle = (obj.isMutant && obj.mutantType === "速") ? "color:#40c4ff; font-weight:bold;" : "";
+
+                html = `
+                    ${mutantLabel}
+                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                        <span style="font-size:1.6em; vertical-align:middle;">${em}</span>
+                        <b style="font-size:1.3em; margin-left:8px;">${obj.species || "モンスター"}</b>${attrBadge}
+                    </div>
+                    <div style="line-height:1.6; font-family:monospace;">
+                        <b>Lv.${obj.level || 1}</b> [${obj.personality || "普通"}]<br>
+                        HP: <span style="color:${hpColor};">${Math.floor(obj.hp)}</span> / ${obj.hpMax}<br>
+                        空腹: ${Math.floor(obj.hunger || 0)}%<br>
+                        パワー: <span style="${pStyle}">${Math.floor(obj.power || 0)}</span> / 速さ: <span style="${sStyle}">${Math.floor((obj.speedVal || 0) * 10)}</span>
+                    </div>`;
+            } 
+            else {
+                let label = "ITEM";
+                let icon = "📦";
+                let recoveryInfo = "";
+
+                if (obj.isCorpse || obj.type === 'corpse') {
+                    label = "なきがら";
+                    icon = "🦴";
+                    recoveryInfo = `<span style="background:#5D4037; color:#fff; padding:2px 8px; border-radius:4px;">分解待ち</span>`;
+                } 
+                else if (obj.type) {
+                    const icons = { fruit: '🍎', fish: '🐟', mushroom: '🍄' };
+                    icon = icons[obj.type] || '🍎';
+                    label = obj.type === 'fruit' ? '果実' : (obj.type === 'fish' ? '魚' : obj.type.toUpperCase());
+                    const recovery = obj.value || obj.nutrition || 20;
+                    recoveryInfo = `<span style="background:#827717; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">回復量: 🍖 ${recovery}</span>`;
+                }
+
+                html = `
+                    <div style="border-bottom:2px solid #555; margin-bottom:8px; padding-bottom:5px;">
+                        <span style="font-size:1.6em; vertical-align:middle;">${icon}</span>
+                        <b style="font-size:1.3em; margin-left:8px;">${label}</b>
+                    </div>
+                    <div style="line-height:1.6;">
+                        ${recoveryInfo}<br>
+                        <div style="margin-top:8px; color:#ccc; font-size:0.8em;">
+                            座標: X:${Math.floor(obj.x)} Y:${Math.floor(obj.y)}
+                        </div>
+                    </div>`;
+            }
+
+            if (statsEl.innerHTML !== html) statsEl.innerHTML = html;
+        } else {
+            const statsEl = document.getElementById('superTargetStats');
+            if (statsEl && statsEl.innerHTML !== "") statsEl.innerHTML = "";
+        }
+        requestAnimationFrame(window.updateSuperUIWithMutation);
+    };
+})();
