@@ -1456,3 +1456,61 @@ window.addEventListener('keydown', function(e) {
     setInterval(ensureAttrInput, 1000);
 
 })();
+
+// ==========================================
+// 【修正版】図鑑（種族リスト）への属性表示
+// ==========================================
+(function() {
+    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+
+    function refreshSpeciesBookAttributes() {
+        const bookDiv = document.getElementById('speciesBook');
+        if (!bookDiv || typeof speciesBook === 'undefined') return;
+
+        // 図鑑内のすべてのボタンをチェック
+        const buttons = bookDiv.getElementsByTagName('button');
+        
+        for (let btn of buttons) {
+            // onclick属性から、どの種族（インデックス）のボタンか特定する
+            // 例: spawnMore(0) なら インデックス0
+            const onclickAttr = btn.getAttribute('onclick');
+            if (onclickAttr && onclickAttr.includes('spawnMore')) {
+                const match = onclickAttr.match(/\d+/);
+                if (match) {
+                    const index = parseInt(match[0]);
+                    const data = speciesBook[index];
+                    
+                    if (data) {
+                        const attr = data.attribute || "ノーマル";
+                        const icon = attrIcons[attr] || "⭐";
+                        
+                        // すでに属性ラベルが付いているかチェック
+                        if (!btn.querySelector('.attr-label')) {
+                            // ボタンのデザインを少し調整して属性を追加
+                            btn.style.display = "flex";
+                            btn.style.justifyContent = "space-between";
+                            btn.style.alignItems = "center";
+                            btn.style.marginBottom = "3px";
+                            
+                            const label = document.createElement('span');
+                            label.className = 'attr-label';
+                            label.style.fontSize = '0.8em';
+                            label.style.background = 'rgba(0,0,0,0.3)';
+                            label.style.padding = '2px 5px';
+                            label.style.borderRadius = '4px';
+                            label.style.marginLeft = '10px';
+                            label.style.color = '#ddd';
+                            label.innerHTML = `${icon} ${attr}`;
+                            
+                            btn.appendChild(label);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 図鑑が開かれたり更新されたりするタイミングに合わせて、高頻度でチェックを実行
+    setInterval(refreshSpeciesBookAttributes, 500);
+
+})();
