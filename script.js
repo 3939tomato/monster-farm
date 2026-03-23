@@ -1588,10 +1588,10 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【解決版】オンライン共有システム（データ完全復元型）
+// 【最終解決版】オンライン共有システム（安全装置・完全同期型）
 // ==========================================
 (function() {
-    // --- 1. 専用の入力・出力画面（オーバーレイ） ---
+    // --- 1. UI画面（オーバーレイ）の生成 ---
     function createExchangeUI(title, code, isImport) {
         const old = document.getElementById('exchangeOverlay');
         if (old) old.remove();
@@ -1604,7 +1604,7 @@ window.addEventListener('keydown', function(e) {
         box.style.cssText = "background:#222; color:#fff; padding:20px; border-radius:10px; width:90%; max-width:500px; text-align:center; border:2px solid #9C27B0;";
         
         box.innerHTML = `<h3 style="margin:0 0 10px 0;">${title}</h3>
-            <p style="font-size:12px; color:#bbb; margin-bottom:10px;">${isImport ? 'コピーした呪文を下の枠に貼り付けてください' : '下の呪文をすべてコピーして友達に送ってください'}</p>
+            <p style="font-size:12px; color:#bbb; margin-bottom:10px;">${isImport ? '呪文を貼り付けてください' : '下の呪文をすべてコピーしてください'}</p>
             <textarea id="exchangeArea" style="width:100%; height:150px; background:#000; color:#0f0; border:1px solid #444; font-size:10px; word-break:break-all; padding:5px;"></textarea>
             <div style="margin-top:15px; display:flex; gap:10px; justify-content:center;">
                 <button id="exchangeClose" class="btn" style="background:#555;">閉じる</button>
@@ -1622,7 +1622,7 @@ window.addEventListener('keydown', function(e) {
         if (document.getElementById('exchangeCopy')) {
             document.getElementById('exchangeCopy').onclick = () => {
                 area.select(); document.execCommand('copy');
-                alert("コードをコピーしました！");
+                alert("コピーしました！新しく発行したこのコードを使ってください！");
             };
         }
 
@@ -1634,7 +1634,7 @@ window.addEventListener('keydown', function(e) {
         }
     }
 
-    // --- 2. 召喚処理（インポート）の修正版 ---
+    // --- 2. 召喚処理（インポート） ---
     function processImport(code) {
         try {
             const binString = atob(code);
@@ -1642,81 +1642,71 @@ window.addEventListener('keydown', function(e) {
             for (let i = 0; i < binString.length; i++) bytes[i] = binString.charCodeAt(i);
             const data = JSON.parse(new TextDecoder().decode(bytes));
 
-            // 画像の読み込み（画像が読み込み終わってから図鑑に追加する）
             const img = new Image();
             img.onload = function() {
+                // 【重要】UIが期待する変数名と1ミリもズレないように全て設定
                 const newSpecies = {
-                    species: data.n + " (異界)",
-                    diet: data.d || "雑食",
-                    attribute: data.a || "ノーマル",
-                    statMin: data.mi || 20,
-                    statMax: data.ma || 60,
-                    heatResist: data.h || 0,
-                    coldResist: data.c || 0,
-                    spawnCount: data.s || 5, // ← ここが undefined 対策！
-                    img: data.i,             // ← ここを文字列(data.i)に修正！
-                    image: data.i,
+                    species: data.species || data.n || "ななしの権兵衛",
+                    name: data.species || data.n || "ななしの権兵衛",
+                    diet: data.diet || data.d || "雑食",
+                    attribute: data.attribute || data.a || "ノーマル",
+                    statMin: Number(data.statMin || data.mi || 20),
+                    statMax: Number(data.statMax || data.ma || 60),
+                    heatResist: Number(data.heatResist || data.h || 0),
+                    coldResist: Number(data.coldResist || data.c || 0),
+                    spawnCount: Number(data.spawnCount || data.s || 5),
+                    img: img,      // 画像オブジェクトそのものを入れる
+                    image: img,    // 別名バックアップ
                     maxLevel: 0
                 };
 
                 if (typeof speciesBook !== 'undefined') {
                     speciesBook.push(newSpecies);
-                    alert(`✨ 召喚成功！\n「${data.n}」を異世界から呼び出しました！`);
+                    alert(`✨ 召喚成功！\n「${newSpecies.species}」が仲間になりました！`);
                     if (typeof updateSpeciesBook === 'function') updateSpeciesBook();
                 }
             };
-            img.src = data.i;
+            // data.i (Base64) を画像として読み込む
+            img.src = data.i || data.image; 
         } catch (e) {
             console.error(e);
-            alert("エラー：コードが壊れているようです。");
+            alert("エラー：古い呪文か、壊れた呪文です。新しく発行し直してください。");
         }
     }
 
-    // --- 3. 呪文発行（エクスポート）の修正版 ---
+    // --- 3. 呪文発行（エクスポート） ---
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
         
-        // 画像を確実にキャンバスに描画
         const targetImg = s.img || s.image;
-        if (targetImg) {
-            if (targetImg instanceof HTMLImageElement) ctx.drawImage(targetImg, 0, 0);
-            else {
-                const tempImg = new Image();
-                tempImg.onload = () => {
-                    ctx.drawImage(tempImg, 0, 0);
-                    finishExport();
-                };
-                tempImg.src = targetImg;
-                return;
-            }
-        }
-        finishExport();
+        if (!targetImg) { alert("画像データが見つかりません"); return; }
 
-        function finishExport() {
-            const exportData = {
-                n: s.species || s.name,
-                d: s.diet,
-                a: s.attribute,
-                mi: s.statMin,
-                ma: s.statMax,
-                h: s.heatResist,
-                c: s.coldResist,
-                s: s.spawnCount, // ← ここを忘れず追加！
-                i: canvas.toDataURL("image/webp", 0.7)
-            };
+        // 画像を描画
+        ctx.drawImage(targetImg, 0, 0);
+        
+        // 【重要】UIのHTML IDや変数名と完全に一致させる 
+        const exportData = {
+            species: s.species || s.name,
+            diet: s.diet,
+            attribute: s.attribute,
+            statMin: s.statMin,
+            statMax: s.statMax,
+            heatResist: s.heatResist,
+            coldResist: s.coldResist,
+            spawnCount: s.spawnCount,
+            i: canvas.toDataURL("image/webp", 0.7)
+        };
 
-            const bytes = new TextEncoder().encode(JSON.stringify(exportData));
-            let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-            createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
-        }
+        const bytes = new TextEncoder().encode(JSON.stringify(exportData));
+        let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        createExchangeUI(`📜 ${exportData.species} の呪文`, btoa(bin), false);
     };
 
-    // --- 4. ボタンの自動追加（監視） ---
+    // --- 4. ボタンの自動配置 ---
     setInterval(() => {
-        // メニューの「召喚」ボタン
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
             const btn = document.createElement('button');
@@ -1727,7 +1717,6 @@ window.addEventListener('keydown', function(e) {
             if (bookBtn) menu.insertBefore(btn, bookBtn); else menu.appendChild(btn);
         }
 
-        // 図鑑の「発行」ボタン
         const bookGrid = document.getElementById('bookGrid');
         if (bookGrid) {
             Array.from(bookGrid.children).forEach((card, idx) => {
@@ -1736,7 +1725,7 @@ window.addEventListener('keydown', function(e) {
                     btn.className = 'btn export-btn';
                     btn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; font-size:11px; color:#fff;";
                     btn.innerText = "📜 じゅもんを発行";
-                    btn.onclick = () => window.exportMonsterCode(idx);
+                    btn.onclick = (e) => { e.stopPropagation(); window.exportMonsterCode(idx); };
                     card.appendChild(btn);
                 }
             });
