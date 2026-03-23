@@ -1588,66 +1588,46 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【最終解決版】オンライン共有システム（安全装置・完全同期型）
+// 【最終完成版】オンライン共有システム
 // ==========================================
 (function() {
-    // --- 1. UI画面（オーバーレイ）の生成 ---
     function createExchangeUI(title, code, isImport) {
         const old = document.getElementById('exchangeOverlay');
         if (old) old.remove();
-
         const overlay = document.createElement('div');
         overlay.id = 'exchangeOverlay';
         overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; justify-content:center; align-items:center; font-family:sans-serif;";
-        
-        const box = document.createElement('div');
-        box.style.cssText = "background:#222; color:#fff; padding:20px; border-radius:10px; width:90%; max-width:500px; text-align:center; border:2px solid #9C27B0;";
-        
-        box.innerHTML = `<h3 style="margin:0 0 10px 0;">${title}</h3>
-            <p style="font-size:12px; color:#bbb; margin-bottom:10px;">${isImport ? '呪文を貼り付けてください' : '下の呪文をすべてコピーしてください'}</p>
+        overlay.innerHTML = `<div style="background:#222; color:#fff; padding:20px; border-radius:10px; width:90%; max-width:500px; text-align:center; border:2px solid #9C27B0;">
+            <h3 style="margin:0 0 10px 0;">${title}</h3>
             <textarea id="exchangeArea" style="width:100%; height:150px; background:#000; color:#0f0; border:1px solid #444; font-size:10px; word-break:break-all; padding:5px;"></textarea>
             <div style="margin-top:15px; display:flex; gap:10px; justify-content:center;">
                 <button id="exchangeClose" class="btn" style="background:#555;">閉じる</button>
                 ${isImport ? '<button id="exchangeDo" class="btn" style="background:#9C27B0;">召喚する！</button>' : '<button id="exchangeCopy" class="btn" style="background:#2196F3;">コピー</button>'}
-            </div>`;
-        
-        overlay.appendChild(box);
+            </div></div>`;
         document.body.appendChild(overlay);
-
         const area = document.getElementById('exchangeArea');
         if (!isImport) { area.value = code; area.select(); }
-
         document.getElementById('exchangeClose').onclick = () => overlay.remove();
-
-        if (document.getElementById('exchangeCopy')) {
-            document.getElementById('exchangeCopy').onclick = () => {
-                area.select(); document.execCommand('copy');
-                alert("コピーしました！新しく発行したこのコードを使ってください！");
-            };
-        }
-
-        if (document.getElementById('exchangeDo')) {
-            document.getElementById('exchangeDo').onclick = () => {
-                const inputCode = area.value.trim().replace(/\s/g, '');
-                if (inputCode) { processImport(inputCode); overlay.remove(); }
-            };
+        if (isImport) {
+            document.getElementById('exchangeDo').onclick = () => { processImport(area.value.trim()); overlay.remove(); };
+        } else {
+            document.getElementById('exchangeCopy').onclick = () => { area.select(); document.execCommand('copy'); alert("コピーしました！"); };
         }
     }
 
-    // --- 2. 召喚処理（インポート） ---
+    // --- インポート処理 ---
     function processImport(code) {
         try {
-            const binString = atob(code);
+            const binString = atob(code.replace(/\s/g, ''));
             const bytes = new Uint8Array(binString.length);
             for (let i = 0; i < binString.length; i++) bytes[i] = binString.charCodeAt(i);
             const data = JSON.parse(new TextDecoder().decode(bytes));
 
             const img = new Image();
             img.onload = function() {
-                // 【重要】UIが期待する変数名と1ミリもズレないように全て設定
                 const newSpecies = {
-                    species: data.species || data.n || "ななしの権兵衛",
-                    name: data.species || data.n || "ななしの権兵衛",
+                    species: data.species || data.n || "異界の種",
+                    name: data.species || data.n || "異界の種",
                     diet: data.diet || data.d || "雑食",
                     attribute: data.attribute || data.a || "ノーマル",
                     statMin: Number(data.statMin || data.mi || 20),
@@ -1655,26 +1635,19 @@ window.addEventListener('keydown', function(e) {
                     heatResist: Number(data.heatResist || data.h || 0),
                     coldResist: Number(data.coldResist || data.c || 0),
                     spawnCount: Number(data.spawnCount || data.s || 5),
-                    img: img,      // 画像オブジェクトそのものを入れる
-                    image: img,    // 別名バックアップ
-                    maxLevel: 0
+                    img: img, image: img, maxLevel: 0
                 };
-
-                if (typeof speciesBook !== 'undefined') {
+                if (window.speciesBook) {
                     speciesBook.push(newSpecies);
-                    alert(`✨ 召喚成功！\n「${newSpecies.species}」が仲間になりました！`);
-                    if (typeof updateSpeciesBook === 'function') updateSpeciesBook();
+                    alert(`✨ 召喚成功：${newSpecies.species}`);
+                    if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
-            // data.i (Base64) を画像として読み込む
-            img.src = data.i || data.image; 
-        } catch (e) {
-            console.error(e);
-            alert("エラー：古い呪文か、壊れた呪文です。新しく発行し直してください。");
-        }
+            img.src = data.i || data.image;
+        } catch (e) { alert("呪文が正しくありません。"); }
     }
 
-    // --- 3. 呪文発行（エクスポート） ---
+    // --- エクスポート処理（画像形式の自動判別） ---
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         const canvas = document.createElement('canvas');
@@ -1682,30 +1655,30 @@ window.addEventListener('keydown', function(e) {
         const ctx = canvas.getContext('2d');
         
         const targetImg = s.img || s.image;
-        if (!targetImg) { alert("画像データが見つかりません"); return; }
+        if (!targetImg) return alert("画像データが見つかりません");
 
-        // 画像を描画
-        ctx.drawImage(targetImg, 0, 0);
-        
-        // 【重要】UIのHTML IDや変数名と完全に一致させる 
-        const exportData = {
-            species: s.species || s.name,
-            diet: s.diet,
-            attribute: s.attribute,
-            statMin: s.statMin,
-            statMax: s.statMax,
-            heatResist: s.heatResist,
-            coldResist: s.coldResist,
-            spawnCount: s.spawnCount,
-            i: canvas.toDataURL("image/webp", 0.7)
+        // 画像が「オブジェクト」か「文字」かを判別して描画
+        const drawAndExport = (imgSrc) => {
+            const tempImg = new Image();
+            tempImg.onload = () => {
+                ctx.drawImage(tempImg, 0, 0, 32, 32);
+                const exportData = {
+                    n: s.species || s.name, d: s.diet, a: s.attribute,
+                    mi: s.statMin, ma: s.statMax, h: s.heatResist, c: s.coldResist,
+                    s: s.spawnCount, i: canvas.toDataURL("image/webp", 0.7)
+                };
+                const bytes = new TextEncoder().encode(JSON.stringify(exportData));
+                let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
+            };
+            tempImg.src = imgSrc;
         };
 
-        const bytes = new TextEncoder().encode(JSON.stringify(exportData));
-        let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        createExchangeUI(`📜 ${exportData.species} の呪文`, btoa(bin), false);
+        // targetImgがHTML要素ならsrcを、文字列ならそのまま使う
+        drawAndExport(targetImg.src || targetImg);
     };
 
-    // --- 4. ボタンの自動配置 ---
+    // --- ボタン追加の自動監視 ---
     setInterval(() => {
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
@@ -1714,13 +1687,12 @@ window.addEventListener('keydown', function(e) {
             btn.style.background = '#9C27B0'; btn.innerHTML = '✨ 異世界から召喚';
             btn.onclick = () => createExchangeUI("✨ 異世界から召喚", "", true);
             const bookBtn = Array.from(menu.getElementsByTagName('button')).find(b => b.innerText.includes('図鑑'));
-            if (bookBtn) menu.insertBefore(btn, bookBtn); else menu.appendChild(btn);
+            if (bookBtn) menu.insertBefore(btn, bookBtn);
         }
-
         const bookGrid = document.getElementById('bookGrid');
         if (bookGrid) {
             Array.from(bookGrid.children).forEach((card, idx) => {
-                if (card.tagName === 'DIV' && !card.querySelector('.export-btn')) {
+                if (!card.querySelector('.export-btn')) {
                     const btn = document.createElement('button');
                     btn.className = 'btn export-btn';
                     btn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; font-size:11px; color:#fff;";
