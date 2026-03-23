@@ -1586,3 +1586,144 @@ window.addEventListener('keydown', function(e) {
         observer.observe(bookGrid, { childList: true, subtree: true });
     }
 })();
+
+// ==========================================
+// 【オンライン共有】ふっかつのじゅもん（コード発行＆召喚）システム
+// ==========================================
+(function() {
+    // --- 1. メニューに「召喚ボタン」を追加 ---
+    function addImportButton() {
+        const menuPanel = document.getElementById('menuPanel');
+        if (menuPanel && !document.getElementById('importBtn')) {
+            const importBtn = document.createElement('button');
+            importBtn.id = 'importBtn';
+            importBtn.className = 'btn';
+            // 魔法っぽい紫色に設定
+            importBtn.style.background = '#9C27B0'; 
+            importBtn.style.color = '#fff';
+            importBtn.innerHTML = '✨ 異世界から召喚 (コード入力)';
+            importBtn.onclick = importMonsterCode;
+            
+            // 図鑑ボタンの上あたりに追加する
+            const bookBtn = Array.from(menuPanel.getElementsByTagName('button')).find(b => b.innerText.includes('図鑑'));
+            if (bookBtn) {
+                menuPanel.insertBefore(importBtn, bookBtn);
+            } else {
+                menuPanel.appendChild(importBtn);
+            }
+        }
+    }
+    // メニューが開かれるたびにチェック
+    setInterval(addImportButton, 1000);
+
+    // --- 2. 召喚（インポート）の処理 ---
+    window.importMonsterCode = function() {
+        // パスワード入力画面を出す
+        const code = prompt("友達の「ふっかつのじゅもん（コード）」を貼り付けてください！\n※文字の羅列です");
+        if (!code) return;
+
+        try {
+            // 暗号を解読 (Base64 -> URIデコード -> JSONパース)
+            const jsonStr = decodeURIComponent(atob(code));
+            const data = JSON.parse(jsonStr);
+
+            // データが正しいかざっくりチェック
+            if (!data.n || !data.i) throw new Error("不正なデータ");
+
+            // ドット絵画像を復元
+            const img = new Image();
+            img.onload = function() {
+                // 図鑑データとして新しく組み立てる
+                const newSpecies = {
+                    species: data.n + " (異界)", // 名前の後ろに(異界)と付けて特別感を出す
+                    diet: data.d || "雑食",
+                    attribute: data.a || "ノーマル",
+                    statMin: data.mi || 20,
+                    statMax: data.ma || 60,
+                    heatResist: data.h || 10,
+                    coldResist: data.c || 10,
+                    img: img
+                };
+
+                // 図鑑に追加して画面を更新
+                if (typeof speciesBook !== 'undefined') {
+                    speciesBook.push(newSpecies);
+                    alert(`✨ 召喚成功！\n「${data.n}」を図鑑に登録しました。\n図鑑を開いて牧場に放流してあげてください！`);
+                    if (typeof updateSpeciesBook === 'function') updateSpeciesBook();
+                }
+            };
+            img.src = data.i; // ここにドット絵のデータが入っている
+        } catch (e) {
+            console.error(e);
+            alert("エラー：呪文が間違っているか、データが壊れています…！\n最初から最後まで全部コピーできているか確認してください。");
+        }
+    };
+
+    // --- 3. 呪文発行（エクスポート）の処理 ---
+    window.exportMonsterCode = function(index) {
+        if (typeof speciesBook === 'undefined' || !speciesBook[index]) return;
+        const data = speciesBook[index];
+
+        // 画像データを文字に変換するために、見えないキャンバスに一度描く
+        const canvas = document.createElement('canvas');
+        canvas.width = 32; canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        
+        if (data.img) {
+            ctx.drawImage(data.img, 0, 0);
+        }
+
+        const imgData = canvas.toDataURL("image/png");
+
+        // 必要なデータだけを抽出（文字数を極力減らすために変数名を短く）
+        const exportData = {
+            n: data.species,     // 名前
+            d: data.diet,        // 食性
+            a: data.attribute,   // 属性
+            mi: data.statMin,    // ステータス最小値
+            ma: data.statMax,    // ステータス最大値
+            h: data.heatResist,  // 耐暑
+            c: data.coldResist,  // 耐寒
+            i: imgData           // ドット絵画像データ
+        };
+
+        // データを文字に変換 -> URIエンコード -> Base64で暗号化
+        const code = btoa(encodeURIComponent(JSON.stringify(exportData)));
+
+        // プロンプトを出してユーザーにコピーさせる
+        prompt(`【${data.species} のふっかつのじゅもん】\n以下のコードをすべてコピーして、友達に教えてあげてください！`, code);
+    };
+
+    // --- 4. 図鑑の各カードに「呪文発行ボタン」をねじ込む ---
+    setInterval(() => {
+        const bookGrid = document.getElementById('bookGrid');
+        if (!bookGrid) return;
+
+        // カードをすべて取得
+        const cards = Array.from(bookGrid.children);
+        let speciesIndex = 0;
+
+        cards.forEach((card) => {
+            if (card.tagName !== 'DIV') return;
+
+            // すでに発行ボタンがあればスキップ（増殖防止）
+            if (!card.querySelector('.export-btn')) {
+                const exportBtn = document.createElement('button');
+                exportBtn.className = 'btn export-btn';
+                exportBtn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; color:#fff; font-size:11px; padding:4px; border-radius:4px;";
+                exportBtn.innerText = "📜 ふっかつのじゅもんを発行";
+                
+                // どのモンスターのボタンか記憶させておく
+                const currentIndex = speciesIndex;
+                exportBtn.onclick = function() {
+                    exportMonsterCode(currentIndex);
+                };
+
+                // カードの一番下に追加
+                card.appendChild(exportBtn);
+            }
+            speciesIndex++;
+        });
+    }, 1000);
+
+})();
