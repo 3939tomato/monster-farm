@@ -1588,9 +1588,10 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【最終完成版】オンライン共有システム
+// 【究極・安定版】オンライン共有システム
 // ==========================================
 (function() {
+    // UI表示関数（変更なし）
     function createExchangeUI(title, code, isImport) {
         const old = document.getElementById('exchangeOverlay');
         if (old) old.remove();
@@ -1602,7 +1603,7 @@ window.addEventListener('keydown', function(e) {
             <textarea id="exchangeArea" style="width:100%; height:150px; background:#000; color:#0f0; border:1px solid #444; font-size:10px; word-break:break-all; padding:5px;"></textarea>
             <div style="margin-top:15px; display:flex; gap:10px; justify-content:center;">
                 <button id="exchangeClose" class="btn" style="background:#555;">閉じる</button>
-                ${isImport ? '<button id="exchangeDo" class="btn" style="background:#9C27B0;">召喚する！</button>' : '<button id="exchangeCopy" class="btn" style="background:#2196F3;">コピー</button>'}
+                ${isImport ? '<button id="exchangeDo" class="btn" style="background:#9C27B0;">召喚！</button>' : '<button id="exchangeCopy" class="btn" style="background:#2196F3;">コピー</button>'}
             </div></div>`;
         document.body.appendChild(overlay);
         const area = document.getElementById('exchangeArea');
@@ -1615,92 +1616,86 @@ window.addEventListener('keydown', function(e) {
         }
     }
 
-    // --- インポート処理 ---
+    // インポート処理（どんな欠損データも補完する）
     function processImport(code) {
         try {
-            const binString = atob(code.replace(/\s/g, ''));
-            const bytes = new Uint8Array(binString.length);
-            for (let i = 0; i < binString.length; i++) bytes[i] = binString.charCodeAt(i);
-            const data = JSON.parse(new TextDecoder().decode(bytes));
-
+            const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
             const img = new Image();
             img.onload = function() {
-                const newSpecies = {
-                    species: data.species || data.n || "異界の種",
-                    name: data.species || data.n || "異界の種",
-                    diet: data.diet || data.d || "雑食",
-                    attribute: data.attribute || data.a || "ノーマル",
-                    statMin: Number(data.statMin || data.mi || 20),
-                    statMax: Number(data.statMax || data.ma || 60),
-                    heatResist: Number(data.heatResist || data.h || 0),
-                    coldResist: Number(data.coldResist || data.c || 0),
-                    spawnCount: Number(data.spawnCount || data.s || 5),
-                    img: img, image: img, maxLevel: 0
+                const newS = {
+                    species: data.n || "ななし", name: data.n || "ななし",
+                    diet: data.d || "雑食", attribute: data.a || "ノーマル",
+                    statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
+                    heatResist: Number(data.h || 0), coldResist: Number(data.c || 0),
+                    spawnCount: Number(data.s || 5), img: img, image: img, maxLevel: 0
                 };
                 if (window.speciesBook) {
-                    speciesBook.push(newSpecies);
-                    alert(`✨ 召喚成功：${newSpecies.species}`);
+                    speciesBook.push(newS);
+                    alert(`✨ 召喚成功：${newS.species}`);
                     if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
-            img.src = data.i || data.image;
-        } catch (e) { alert("呪文が正しくありません。"); }
+            img.src = data.i;
+        } catch (e) { alert("呪文が解析できません。"); }
     }
 
-    // --- エクスポート処理（画像形式の自動判別） ---
+    // エクスポート処理（★ここを大幅強化★）
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
+        if (!s) return alert("モンスターデータが見つかりません");
+
+        // 画像データをどこからでも見つけてくる
+        let imgSrc = "";
+        if (s.img && s.img.src) imgSrc = s.img.src; // Imageオブジェクトの場合
+        else if (typeof s.img === 'string') imgSrc = s.img; // DataURL文字列の場合
+        else if (s.image && s.image.src) imgSrc = s.image.src;
+        else if (typeof s.image === 'string') imgSrc = s.image;
+
+        if (!imgSrc || imgSrc.length < 10) {
+            return alert("画像データが空っぽです。描き直す必要があるかもしれません。");
+        }
+
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
+        const tempImg = new Image();
         
-        const targetImg = s.img || s.image;
-        if (!targetImg) return alert("画像データが見つかりません");
-
-        // 画像が「オブジェクト」か「文字」かを判別して描画
-        const drawAndExport = (imgSrc) => {
-            const tempImg = new Image();
-            tempImg.onload = () => {
-                ctx.drawImage(tempImg, 0, 0, 32, 32);
-                const exportData = {
-                    n: s.species || s.name, d: s.diet, a: s.attribute,
-                    mi: s.statMin, ma: s.statMax, h: s.heatResist, c: s.coldResist,
-                    s: s.spawnCount, i: canvas.toDataURL("image/webp", 0.7)
-                };
-                const bytes = new TextEncoder().encode(JSON.stringify(exportData));
-                let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-                createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
+        tempImg.onload = () => {
+            ctx.drawImage(tempImg, 0, 0, 32, 32);
+            const exportData = {
+                n: s.species || s.name, d: s.diet, a: s.attribute,
+                mi: s.statMin, ma: s.statMax, h: s.heatResist, c: s.coldResist,
+                s: s.spawnCount, i: canvas.toDataURL("image/webp", 0.7)
             };
-            tempImg.src = imgSrc;
+            const bytes = new TextEncoder().encode(JSON.stringify(exportData));
+            let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
         };
-
-        // targetImgがHTML要素ならsrcを、文字列ならそのまま使う
-        drawAndExport(targetImg.src || targetImg);
+        tempImg.onerror = () => alert("画像の読み込みに失敗しました。");
+        tempImg.src = imgSrc;
     };
 
-    // --- ボタン追加の自動監視 ---
+    // ボタン配置（図鑑のカードに確実に紐付ける）
     setInterval(() => {
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
             const btn = document.createElement('button');
             btn.id = 'importBtn'; btn.className = 'btn';
-            btn.style.background = '#9C27B0'; btn.innerHTML = '✨ 異世界から召喚';
-            btn.onclick = () => createExchangeUI("✨ 異世界から召喚", "", true);
-            const bookBtn = Array.from(menu.getElementsByTagName('button')).find(b => b.innerText.includes('図鑑'));
-            if (bookBtn) menu.insertBefore(btn, bookBtn);
+            btn.style.background = '#9C27B0'; btn.innerHTML = '✨ 異界から召喚';
+            btn.onclick = () => createExchangeUI("✨ 異界から召喚", "", true);
+            menu.appendChild(btn);
         }
-        const bookGrid = document.getElementById('bookGrid');
-        if (bookGrid) {
-            Array.from(bookGrid.children).forEach((card, idx) => {
-                if (!card.querySelector('.export-btn')) {
-                    const btn = document.createElement('button');
-                    btn.className = 'btn export-btn';
-                    btn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; font-size:11px; color:#fff;";
-                    btn.innerText = "📜 じゅもんを発行";
-                    btn.onclick = (e) => { e.stopPropagation(); window.exportMonsterCode(idx); };
-                    card.appendChild(btn);
-                }
-            });
-        }
+        // 図鑑の全カードに「発行」ボタンを付ける
+        const cards = document.querySelectorAll('#bookGrid > div');
+        cards.forEach((card, idx) => {
+            if (!card.querySelector('.export-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'btn export-btn';
+                btn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; font-size:11px; color:#fff;";
+                btn.innerText = "📜 じゅもんを発行";
+                btn.onclick = (e) => { e.stopPropagation(); window.exportMonsterCode(idx); };
+                card.appendChild(btn);
+            }
+        });
     }, 1000);
 })();
