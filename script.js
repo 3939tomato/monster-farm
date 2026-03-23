@@ -1588,9 +1588,11 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【オンライン共有】ふっかつのじゅもん（コード発行＆召喚）システム
+// 【修正版v2】ふっかつのじゅもん（文字化け・途切れ対策済み）
 // ==========================================
 (function() {
+    const attrIcons = { "火":"🔥", "水":"💧", "木":"🌿", "ノーマル":"⭐", "闇":"🌑", "光":"✨" };
+
     // --- 1. メニューに「召喚ボタン」を追加 ---
     function addImportButton() {
         const menuPanel = document.getElementById('menuPanel');
@@ -1598,44 +1600,38 @@ window.addEventListener('keydown', function(e) {
             const importBtn = document.createElement('button');
             importBtn.id = 'importBtn';
             importBtn.className = 'btn';
-            // 魔法っぽい紫色に設定
             importBtn.style.background = '#9C27B0'; 
             importBtn.style.color = '#fff';
             importBtn.innerHTML = '✨ 異世界から召喚 (コード入力)';
             importBtn.onclick = importMonsterCode;
             
-            // 図鑑ボタンの上あたりに追加する
             const bookBtn = Array.from(menuPanel.getElementsByTagName('button')).find(b => b.innerText.includes('図鑑'));
-            if (bookBtn) {
-                menuPanel.insertBefore(importBtn, bookBtn);
-            } else {
-                menuPanel.appendChild(importBtn);
-            }
+            if (bookBtn) menuPanel.insertBefore(importBtn, bookBtn);
+            else menuPanel.appendChild(importBtn);
         }
     }
-    // メニューが開かれるたびにチェック
     setInterval(addImportButton, 1000);
 
     // --- 2. 召喚（インポート）の処理 ---
     window.importMonsterCode = function() {
-        // パスワード入力画面を出す
-        const code = prompt("友達の「ふっかつのじゅもん（コード）」を貼り付けてください！\n※文字の羅列です");
+        let code = prompt("友達の「ふっかつのじゅもん」を貼り付けてください");
         if (!code) return;
 
+        // 余計な空白や改行を削除
+        code = code.trim().replace(/\s/g, '');
+
         try {
-            // 暗号を解読 (Base64 -> URIデコード -> JSONパース)
-            const jsonStr = decodeURIComponent(atob(code));
+            // 日本語対応のデコード処理
+            const binString = atob(code);
+            const bytes = new Uint8Array(binString.length);
+            for (let i = 0; i < binString.length; i++) bytes[i] = binString.charCodeAt(i);
+            const jsonStr = new TextDecoder().decode(bytes);
             const data = JSON.parse(jsonStr);
 
-            // データが正しいかざっくりチェック
-            if (!data.n || !data.i) throw new Error("不正なデータ");
-
-            // ドット絵画像を復元
             const img = new Image();
             img.onload = function() {
-                // 図鑑データとして新しく組み立てる
                 const newSpecies = {
-                    species: data.n + " (異界)", // 名前の後ろに(異界)と付けて特別感を出す
+                    species: data.n + " (異界)",
                     diet: data.d || "雑食",
                     attribute: data.a || "ノーマル",
                     statMin: data.mi || 20,
@@ -1645,17 +1641,16 @@ window.addEventListener('keydown', function(e) {
                     img: img
                 };
 
-                // 図鑑に追加して画面を更新
                 if (typeof speciesBook !== 'undefined') {
                     speciesBook.push(newSpecies);
-                    alert(`✨ 召喚成功！\n「${data.n}」を図鑑に登録しました。\n図鑑を開いて牧場に放流してあげてください！`);
+                    alert(`✨ 召喚成功！\n「${data.n}」が仲間になりました！`);
                     if (typeof updateSpeciesBook === 'function') updateSpeciesBook();
                 }
             };
-            img.src = data.i; // ここにドット絵のデータが入っている
+            img.src = data.i;
         } catch (e) {
             console.error(e);
-            alert("エラー：呪文が間違っているか、データが壊れています…！\n最初から最後まで全部コピーできているか確認してください。");
+            alert("エラー：コードが正しくありません。\nコピーした文字が途中で切れていないか確認してください！");
         }
     };
 
@@ -1664,66 +1659,58 @@ window.addEventListener('keydown', function(e) {
         if (typeof speciesBook === 'undefined' || !speciesBook[index]) return;
         const data = speciesBook[index];
 
-        // 画像データを文字に変換するために、見えないキャンバスに一度描く
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
-        
-        if (data.img) {
-            ctx.drawImage(data.img, 0, 0);
-        }
+        if (data.img) ctx.drawImage(data.img, 0, 0);
 
-        const imgData = canvas.toDataURL("image/png");
+        // 画質を少し落としてコードを短くする（共有しやすくするため）
+        const imgData = canvas.toDataURL("image/webp", 0.5);
 
-        // 必要なデータだけを抽出（文字数を極力減らすために変数名を短く）
         const exportData = {
-            n: data.species,     // 名前
-            d: data.diet,        // 食性
-            a: data.attribute,   // 属性
-            mi: data.statMin,    // ステータス最小値
-            ma: data.statMax,    // ステータス最大値
-            h: data.heatResist,  // 耐暑
-            c: data.coldResist,  // 耐寒
-            i: imgData           // ドット絵画像データ
+            n: data.species,
+            d: data.diet,
+            a: data.attribute,
+            mi: data.statMin,
+            ma: data.statMax,
+            h: data.heatResist,
+            c: data.coldResist,
+            i: imgData
         };
 
-        // データを文字に変換 -> URIエンコード -> Base64で暗号化
-        const code = btoa(encodeURIComponent(JSON.stringify(exportData)));
+        // 日本語対応のエンコード処理
+        const jsonStr = JSON.stringify(exportData);
+        const bytes = new TextEncoder().encode(jsonStr);
+        let binString = "";
+        for (let i = 0; i < bytes.length; i++) binString += String.fromCharCode(bytes[i]);
+        const code = btoa(binString);
 
-        // プロンプトを出してユーザーにコピーさせる
-        prompt(`【${data.species} のふっかつのじゅもん】\n以下のコードをすべてコピーして、友達に教えてあげてください！`, code);
+        // コンソールにも出力（promptで切れる場合のバックアップ）
+        console.log("【Monster Code】", code);
+        
+        // ユーザーにコピーさせる
+        const msg = `【${data.species} の復活のじゅもん】\n下のコードを「すべて」コピーして友達に送ってください：`;
+        prompt(msg, code);
     };
 
-    // --- 4. 図鑑の各カードに「呪文発行ボタン」をねじ込む ---
+    // --- 4. 図鑑へのボタン追加（監視） ---
     setInterval(() => {
         const bookGrid = document.getElementById('bookGrid');
         if (!bookGrid) return;
-
-        // カードをすべて取得
         const cards = Array.from(bookGrid.children);
         let speciesIndex = 0;
-
         cards.forEach((card) => {
             if (card.tagName !== 'DIV') return;
-
-            // すでに発行ボタンがあればスキップ（増殖防止）
             if (!card.querySelector('.export-btn')) {
                 const exportBtn = document.createElement('button');
                 exportBtn.className = 'btn export-btn';
                 exportBtn.style.cssText = "display:block; width:100%; margin-top:8px; background:#607D8B; color:#fff; font-size:11px; padding:4px; border-radius:4px;";
-                exportBtn.innerText = "📜 ふっかつのじゅもんを発行";
-                
-                // どのモンスターのボタンか記憶させておく
+                exportBtn.innerText = "📜 じゅもんを発行";
                 const currentIndex = speciesIndex;
-                exportBtn.onclick = function() {
-                    exportMonsterCode(currentIndex);
-                };
-
-                // カードの一番下に追加
+                exportBtn.onclick = () => exportMonsterCode(currentIndex);
                 card.appendChild(exportBtn);
             }
             speciesIndex++;
         });
     }, 1000);
-
 })();
