@@ -1588,7 +1588,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【真・完全版 V6】データ構造強制リペア ＆ JSONエラー完全封じ
+// 【最終決戦版 V7】エラー強制回避・自動データ整形システム
 // ==========================================
 (function() {
     function createExchangeUI(title, code, isImport) {
@@ -1607,13 +1607,12 @@ window.addEventListener('keydown', function(e) {
         document.body.appendChild(overlay);
         const area = document.getElementById('exchangeArea');
         if (!isImport) { area.value = code; area.select(); }
-        document.getElementById.onclick = () => overlay.remove();
+        document.getElementById('exchangeClose').onclick = () => overlay.remove();
         if (isImport) {
             document.getElementById('exchangeDo').onclick = () => { processImport(area.value.trim()); overlay.remove(); };
         } else {
             document.getElementById('exchangeCopy').onclick = () => { area.select(); document.execCommand('copy'); alert("コピーしました！"); };
         }
-        document.getElementById('exchangeClose').onclick = () => overlay.remove();
     }
 
     function processImport(code) {
@@ -1621,35 +1620,42 @@ window.addEventListener('keydown', function(e) {
             const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
             const imgObj = new Image();
             imgObj.onload = function() {
-                imgObj.toString = function() { return this.src; };
-                // ★エラーの元凶「undefined」を消し去るための空データ
-                const cleanStats = JSON.stringify({ level: 1, exp: 0, hp: 100 });
+                // メインプログラムが求める「正しいJSON文字列」
+                const validStatsString = JSON.stringify({ level: 1, exp: 0, hp: 100 });
 
                 const newS = {
-                    species: data.n || "異界種", name: data.n || "異界種",
-                    diet: data.d || "雑食", attribute: data.a || "ノーマル",
-                    statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
-                    heatResist: Number(data.h || 0), hResist: Number(data.h || 0),
-                    coldResist: Number(data.c || 0), cResist: Number(data.c || 0),
-                    spawnCount: Number(data.s || 5), releaseCount: Number(data.s || 5),
-                    stats: cleanStats, // ここが undefined だとエラーになる
-                    data: cleanStats,  // バックアップ
-                    img: imgObj, image: imgObj, url: data.i, maxLevel: 0
+                    species: data.n || "異界種",
+                    name: data.n || "異界種",
+                    diet: data.d || "雑食",
+                    attribute: data.a || "ノーマル",
+                    statMin: Number(data.mi || 20),
+                    statMax: Number(data.ma || 60),
+                    // 耐性と放流数をすべての候補名にセット
+                    heatResist: Number(data.h || 0),
+                    coldResist: Number(data.c || 0),
+                    spawnCount: Number(data.s || 5),
+                    // ★ここが重要：メインプログラムが JSON.parse する対象
+                    stats: validStatsString,
+                    data: validStatsString,
+                    img: imgObj,
+                    image: imgObj,
+                    url: data.i,
+                    maxLevel: 0
                 };
+                
                 if (window.speciesBook) {
                     speciesBook.push(newS);
                     if (window.updateSpeciesBook) updateSpeciesBook();
-                    alert(`✨ 召喚完了：${newS.species}`);
+                    alert(`✨ ${newS.species} を召喚しました！`);
                 }
             };
             imgObj.src = data.i;
-        } catch (e) { alert("呪文が正しくありません。"); }
+        } catch (e) { alert("じゅもんが正しくありません。"); }
     }
 
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         if (!s) return;
-        let imgSrc = s.url || (s.img && s.img.src) || (s.image && s.image.src) || s.img || s.image;
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
@@ -1659,33 +1665,32 @@ window.addEventListener('keydown', function(e) {
             const exportData = {
                 n: s.species || s.name, d: s.diet, a: s.attribute,
                 mi: s.statMin, ma: s.statMax,
-                h: s.heatResist || s.hResist || 0,
-                c: s.coldResist || s.cResist || 0,
-                s: s.spawnCount || s.releaseCount || 5,
-                i: canvas.toDataURL("image/webp", 0.7)
+                h: s.heatResist || 0, c: s.coldResist || 0,
+                s: s.spawnCount || 5, i: canvas.toDataURL("image/webp", 0.7)
             };
             const bytes = new TextEncoder().encode(JSON.stringify(exportData));
             let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
             createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
         };
-        tempImg.src = imgSrc;
+        tempImg.src = s.url || (s.img && s.img.src) || (s.image && s.image.src) || s.img;
     };
 
-    // ★最強の自動修理機能（1秒ごとに全てのデータを点検）
+    // ★最強のリアルタイム修理（undefinedを数字の0や有効なJSONに変換）
     setInterval(() => {
         if (window.speciesBook) {
             speciesBook.forEach(s => {
-                // 耐性の表示名ズレを強制修正
-                if (s.heatResist === undefined || isNaN(s.heatResist)) s.heatResist = Number(s.hResist || 0);
-                if (s.coldResist === undefined || isNaN(s.coldResist)) s.coldResist = Number(s.cResist || 0);
-                // 放流数の表示名ズレを強制修正
-                if (s.spawnCount === undefined || isNaN(s.spawnCount)) s.spawnCount = Number(s.releaseCount || 5);
-                // 【最重要】JSONエラーの原因となる stats プロパティを強制セット
-                if (!s.stats || s.stats === "undefined") s.stats = JSON.stringify({level:1});
-                if (!s.data || s.data === "undefined") s.data = JSON.stringify({level:1});
+                // 数値が undefined や NaN なら強制的に 0 またはデフォルト値にする
+                if (typeof s.heatResist !== 'number' || isNaN(s.heatResist)) s.heatResist = 0;
+                if (typeof s.coldResist !== 'number' || isNaN(s.coldResist)) s.coldResist = 0;
+                if (typeof s.spawnCount !== 'number' || isNaN(s.spawnCount)) s.spawnCount = 5;
+                
+                // エラーの元「stats」が文字列の "undefined" になっていたら JSON 形式に直す
+                if (!s.stats || s.stats === "undefined" || typeof s.stats !== 'string') {
+                    s.stats = JSON.stringify({ level: 1 });
+                }
             });
         }
-        // ボタンの維持
+        // UIボタンの維持
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
             const btn = document.createElement('button');
@@ -1705,5 +1710,5 @@ window.addEventListener('keydown', function(e) {
                 card.appendChild(btn);
             }
         });
-    }, 1000);
+    }, 500); // 0.5秒ごとにチェック
 })();
