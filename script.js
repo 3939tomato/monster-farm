@@ -1588,10 +1588,10 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【究極・安定版】オンライン共有システム
+// 【真・完全版】オンライン共有システム（画像空っぽエラー完全対応）
 // ==========================================
 (function() {
-    // UI表示関数（変更なし）
+    // UI表示関数
     function createExchangeUI(title, code, isImport) {
         const old = document.getElementById('exchangeOverlay');
         if (old) old.remove();
@@ -1616,7 +1616,7 @@ window.addEventListener('keydown', function(e) {
         }
     }
 
-    // インポート処理（どんな欠損データも補完する）
+    // インポート処理
     function processImport(code) {
         try {
             const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
@@ -1639,15 +1639,16 @@ window.addEventListener('keydown', function(e) {
         } catch (e) { alert("呪文が解析できません。"); }
     }
 
-    // エクスポート処理（★ここを大幅強化★）
+    // エクスポート処理（★画像探しの処理を完全修正★）
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         if (!s) return alert("モンスターデータが見つかりません");
 
-        // 画像データをどこからでも見つけてくる
+        // ★ここを修正: 'url' に入っている画像データもしっかり拾うようにしました
         let imgSrc = "";
-        if (s.img && s.img.src) imgSrc = s.img.src; // Imageオブジェクトの場合
-        else if (typeof s.img === 'string') imgSrc = s.img; // DataURL文字列の場合
+        if (s.url) imgSrc = s.url; // 自分で描いたモンスター用
+        else if (s.img && s.img.src) imgSrc = s.img.src; 
+        else if (typeof s.img === 'string') imgSrc = s.img; 
         else if (s.image && s.image.src) imgSrc = s.image.src;
         else if (typeof s.image === 'string') imgSrc = s.image;
 
@@ -1675,7 +1676,7 @@ window.addEventListener('keydown', function(e) {
         tempImg.src = imgSrc;
     };
 
-    // ボタン配置（図鑑のカードに確実に紐付ける）
+    // ボタン配置
     setInterval(() => {
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
@@ -1685,7 +1686,6 @@ window.addEventListener('keydown', function(e) {
             btn.onclick = () => createExchangeUI("✨ 異界から召喚", "", true);
             menu.appendChild(btn);
         }
-        // 図鑑の全カードに「発行」ボタンを付ける
         const cards = document.querySelectorAll('#bookGrid > div');
         cards.forEach((card, idx) => {
             if (!card.querySelector('.export-btn')) {
