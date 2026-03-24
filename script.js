@@ -1588,7 +1588,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【真・完全版 V2】オンライン共有システム（表示バグ撲滅）
+// 【真・完全版 V3】データ紐付け完全修正版
 // ==========================================
 (function() {
     function createExchangeUI(title, code, isImport) {
@@ -1596,8 +1596,8 @@ window.addEventListener('keydown', function(e) {
         if (old) old.remove();
         const overlay = document.createElement('div');
         overlay.id = 'exchangeOverlay';
-        overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; justify-content:center; align-items:center; font-family:sans-serif;";
-        overlay.innerHTML = `<div style="background:#222; color:#fff; padding:20px; border-radius:10px; width:90%; max-width:500px; text-align:center; border:2px solid #9C27B0;">
+        overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; justify-content:center; align-items:center; font-family:sans-serif; color:#fff;";
+        overlay.innerHTML = `<div style="background:#222; padding:20px; border-radius:10px; width:90%; max-width:500px; text-align:center; border:2px solid #9C27B0;">
             <h3 style="margin:0 0 10px 0;">${title}</h3>
             <textarea id="exchangeArea" style="width:100%; height:150px; background:#000; color:#0f0; border:1px solid #444; font-size:10px; word-break:break-all; padding:5px;"></textarea>
             <div style="margin-top:15px; display:flex; gap:10px; justify-content:center;">
@@ -1621,60 +1621,72 @@ window.addEventListener('keydown', function(e) {
             const imgObj = new Image();
             
             imgObj.onload = function() {
-                // ★魔法のコード：HTMLで表示される時は自動で文字（URL）になり、Canvasでは画像オブジェクトになる
                 imgObj.toString = function() { return this.src; };
 
+                // ★全ての可能性を網羅してデータをセット（これでundefinedを防ぐ）
                 const newS = {
-                    species: data.n || "異世界のモンスター", 
-                    name: data.n || "異世界のモンスター",
-                    diet: data.d || "雑食", attribute: data.a || "ノーマル",
-                    statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
-                    heatResist: Number(data.h || 0), coldResist: Number(data.c || 0),
-                    spawnCount: Number(data.s || 5), 
-                    img: imgObj, image: imgObj, url: data.i, maxLevel: 0
+                    // 名前
+                    species: data.n || "異界種",
+                    name: data.n || "異界種",
+                    // 基本設定
+                    diet: data.d || "雑食",
+                    attribute: data.a || "ノーマル",
+                    // ステータス
+                    statMin: Number(data.mi || 20),
+                    statMax: Number(data.ma || 60),
+                    // 耐性（考えられる全ての変数名にセット）
+                    heatResist: Number(data.h || 0),
+                    coldResist: Number(data.c || 0),
+                    hResist: Number(data.h || 0),
+                    cResist: Number(data.c || 0),
+                    // 放流セット数
+                    spawnCount: Number(data.s || 5),
+                    releaseCount: Number(data.s || 5),
+                    count: Number(data.s || 5),
+                    // 画像
+                    img: imgObj,
+                    image: imgObj,
+                    url: data.i,
+                    maxLevel: 0
                 };
+
                 if (window.speciesBook) {
                     speciesBook.push(newS);
-                    alert(`✨ 召喚成功：${newS.species}`);
+                    alert(`✨ 召喚成功：${newS.species}\n放流も可能になりました！`);
                     if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
-            imgObj.onerror = function() { alert("画像データの復元に失敗しました。"); };
-            imgObj.src = data.i || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-            
-        } catch (e) { alert("呪文が解析できません。正しい呪文ですか？"); }
+            imgObj.src = data.i;
+        } catch (e) { alert("呪文が正しくありません。"); }
     }
 
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
-        if (!s) return alert("モンスターデータが見つかりません");
-
-        let imgSrc = "";
-        if (s.url) imgSrc = s.url;
-        else if (s.img && typeof s.img === 'string') imgSrc = s.img;
-        else if (s.img && s.img.src) imgSrc = s.img.src;
-        else if (s.image && typeof s.image === 'string') imgSrc = s.image;
-        else if (s.image && s.image.src) imgSrc = s.image.src;
-
-        if (!imgSrc || imgSrc.length < 10) return alert("画像データが空っぽです。描き直す必要があるかもしれません。");
+        if (!s) return;
+        let imgSrc = s.url || (s.img && s.img.src) || (s.image && s.image.src) || s.img || s.image;
+        if (!imgSrc || imgSrc.length < 10) return alert("画像データに問題があります。");
 
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
         const tempImg = new Image();
-        
         tempImg.onload = () => {
             ctx.drawImage(tempImg, 0, 0, 32, 32);
             const exportData = {
-                n: s.species || s.name, d: s.diet, a: s.attribute,
-                mi: s.statMin, ma: s.statMax, h: s.heatResist, c: s.coldResist,
-                s: s.spawnCount, i: canvas.toDataURL("image/webp", 0.7)
+                n: s.species || s.name, 
+                d: s.diet, 
+                a: s.attribute,
+                mi: s.statMin, 
+                ma: s.statMax, 
+                h: s.heatResist || s.hResist || 0, 
+                c: s.coldResist || s.cResist || 0,
+                s: s.spawnCount || s.releaseCount || 5, 
+                i: canvas.toDataURL("image/webp", 0.7)
             };
             const bytes = new TextEncoder().encode(JSON.stringify(exportData));
             let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
             createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
         };
-        tempImg.onerror = () => alert("画像の読み込みに失敗しました。");
         tempImg.src = imgSrc;
     };
 
