@@ -1588,10 +1588,9 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【真・完全版】オンライン共有システム（画像空っぽエラー完全対応）
+// 【真・完全版 V2】オンライン共有システム（表示バグ撲滅）
 // ==========================================
 (function() {
-    // UI表示関数
     function createExchangeUI(title, code, isImport) {
         const old = document.getElementById('exchangeOverlay');
         if (old) old.remove();
@@ -1616,18 +1615,23 @@ window.addEventListener('keydown', function(e) {
         }
     }
 
-    // インポート処理
     function processImport(code) {
         try {
             const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
-            const img = new Image();
-            img.onload = function() {
+            const imgObj = new Image();
+            
+            imgObj.onload = function() {
+                // ★魔法のコード：HTMLで表示される時は自動で文字（URL）になり、Canvasでは画像オブジェクトになる
+                imgObj.toString = function() { return this.src; };
+
                 const newS = {
-                    species: data.n || "ななし", name: data.n || "ななし",
+                    species: data.n || "異世界のモンスター", 
+                    name: data.n || "異世界のモンスター",
                     diet: data.d || "雑食", attribute: data.a || "ノーマル",
                     statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
                     heatResist: Number(data.h || 0), coldResist: Number(data.c || 0),
-                    spawnCount: Number(data.s || 5), img: img, image: img, maxLevel: 0
+                    spawnCount: Number(data.s || 5), 
+                    img: imgObj, image: imgObj, url: data.i, maxLevel: 0
                 };
                 if (window.speciesBook) {
                     speciesBook.push(newS);
@@ -1635,26 +1639,24 @@ window.addEventListener('keydown', function(e) {
                     if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
-            img.src = data.i;
-        } catch (e) { alert("呪文が解析できません。"); }
+            imgObj.onerror = function() { alert("画像データの復元に失敗しました。"); };
+            imgObj.src = data.i || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+            
+        } catch (e) { alert("呪文が解析できません。正しい呪文ですか？"); }
     }
 
-    // エクスポート処理（★画像探しの処理を完全修正★）
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         if (!s) return alert("モンスターデータが見つかりません");
 
-        // ★ここを修正: 'url' に入っている画像データもしっかり拾うようにしました
         let imgSrc = "";
-        if (s.url) imgSrc = s.url; // 自分で描いたモンスター用
-        else if (s.img && s.img.src) imgSrc = s.img.src; 
-        else if (typeof s.img === 'string') imgSrc = s.img; 
+        if (s.url) imgSrc = s.url;
+        else if (s.img && typeof s.img === 'string') imgSrc = s.img;
+        else if (s.img && s.img.src) imgSrc = s.img.src;
+        else if (s.image && typeof s.image === 'string') imgSrc = s.image;
         else if (s.image && s.image.src) imgSrc = s.image.src;
-        else if (typeof s.image === 'string') imgSrc = s.image;
 
-        if (!imgSrc || imgSrc.length < 10) {
-            return alert("画像データが空っぽです。描き直す必要があるかもしれません。");
-        }
+        if (!imgSrc || imgSrc.length < 10) return alert("画像データが空っぽです。描き直す必要があるかもしれません。");
 
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
@@ -1676,7 +1678,6 @@ window.addEventListener('keydown', function(e) {
         tempImg.src = imgSrc;
     };
 
-    // ボタン配置
     setInterval(() => {
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
