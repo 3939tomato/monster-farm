@@ -1588,7 +1588,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【真・完全版 V4】データ完全同期＆自動修理システム
+// 【最終解決版 V5】JSONエラー修正 ＆ 放流機能復旧
 // ==========================================
 (function() {
     function createExchangeUI(title, code, isImport) {
@@ -1621,24 +1621,31 @@ window.addEventListener('keydown', function(e) {
             const imgObj = new Image();
             imgObj.onload = function() {
                 imgObj.toString = function() { return this.src; };
+                
+                // ★メインプログラムが JSON.parse(undefined) で壊れないように空のJSONを用意
+                const dummyStats = JSON.stringify({ level: 1, exp: 0 });
+
                 const newS = {
                     species: data.n || "異界種", name: data.n || "異界種",
                     diet: data.d || "雑食", attribute: data.a || "ノーマル",
                     statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
-                    // ★あらゆる名前の可能性に対応
-                    heatResist: Number(data.h || 0), hResist: Number(data.h || 0), heat: Number(data.h || 0),
-                    coldResist: Number(data.c || 0), cResist: Number(data.c || 0), cold: Number(data.c || 0),
-                    spawnCount: Number(data.s || 5), releaseCount: Number(data.s || 5), count: Number(data.s || 5),
+                    // 耐性と放流数を全ての変数名で網羅
+                    heatResist: Number(data.h || 0), hResist: Number(data.h || 0),
+                    coldResist: Number(data.c || 0), cResist: Number(data.c || 0),
+                    spawnCount: Number(data.s || 5), releaseCount: Number(data.s || 5),
+                    // ★最重要：JSONエラーを回避するためのダミーデータ
+                    stats: dummyStats, 
+                    data: dummyStats,
                     img: imgObj, image: imgObj, url: data.i, maxLevel: 0
                 };
                 if (window.speciesBook) {
                     speciesBook.push(newS);
-                    alert(`✨ 召喚成功：${newS.species}`);
+                    alert(`✨ 召喚完了：${newS.species}`);
                     if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
             imgObj.src = data.i;
-        } catch (e) { alert("呪文が正しくありません。"); }
+        } catch (e) { alert("呪文の解析に失敗しました。"); }
     }
 
     window.exportMonsterCode = function(idx) {
@@ -1652,11 +1659,11 @@ window.addEventListener('keydown', function(e) {
         tempImg.onload = () => {
             ctx.drawImage(tempImg, 0, 0, 32, 32);
             const exportData = {
-                n: s.species || s.name || "ななし", d: s.diet || "雑食", a: s.attribute || "ノーマル",
-                mi: s.statMin || 20, ma: s.statMax || 60,
-                h: s.heatResist || s.hResist || s.heat || 0,
-                c: s.coldResist || s.cResist || s.cold || 0,
-                s: s.spawnCount || s.releaseCount || s.count || 5,
+                n: s.species || s.name, d: s.diet, a: s.attribute,
+                mi: s.statMin, ma: s.statMax,
+                h: s.heatResist || s.hResist || 0,
+                c: s.coldResist || s.cResist || 0,
+                s: s.spawnCount || s.releaseCount || 5,
                 i: canvas.toDataURL("image/webp", 0.7)
             };
             const bytes = new TextEncoder().encode(JSON.stringify(exportData));
@@ -1666,13 +1673,17 @@ window.addEventListener('keydown', function(e) {
         tempImg.src = imgSrc;
     };
 
-    // ★重要：1秒ごとに図鑑データを監視して undefined を自動修理する
+    // ★図鑑表示の undefined を強制的に書き換えて放流ボタンを有効化する
     setInterval(() => {
         if (window.speciesBook) {
             speciesBook.forEach(s => {
-                if (s.heatResist === undefined) s.heatResist = s.hResist || s.heat || 0;
-                if (s.coldResist === undefined) s.coldResist = s.cResist || s.cold || 0;
-                if (s.spawnCount === undefined) s.spawnCount = s.releaseCount || s.count || 5;
+                // 表示用の数値を強制セット
+                if (s.heatResist === undefined) s.heatResist = s.hResist || 0;
+                if (s.coldResist === undefined) s.coldResist = s.cResist || 0;
+                if (s.spawnCount === undefined) s.spawnCount = s.releaseCount || 5;
+                // 放流時のエラー回避用
+                if (!s.stats) s.stats = JSON.stringify({ level: 1 });
+                if (!s.data) s.data = JSON.stringify({ level: 1 });
             });
         }
         const menu = document.getElementById('menuPanel');
