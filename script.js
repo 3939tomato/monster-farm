@@ -1588,7 +1588,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【最終決戦版 V7】エラー強制回避・自動データ整形システム
+// 【完全解決版】オンライン共有システム（変数名・ピクセルデータ完全一致）
 // ==========================================
 (function() {
     function createExchangeUI(title, code, isImport) {
@@ -1618,35 +1618,48 @@ window.addEventListener('keydown', function(e) {
     function processImport(code) {
         try {
             const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
+            
+            // 画像を読み込み、放流エラーの元凶だった「ピクセルデータ(pixels)」を復元する
             const imgObj = new Image();
             imgObj.onload = function() {
-                // メインプログラムが求める「正しいJSON文字列」
-                const validStatsString = JSON.stringify({ level: 1, exp: 0, hp: 100 });
+                const c = document.createElement('canvas');
+                c.width = 32; c.height = 32;
+                const ctx = c.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(imgObj, 0, 0, 32, 32);
+                const idata = ctx.getImageData(0,0,32,32).data;
+                const pArray = Array(32).fill().map(()=>Array(32).fill(null));
+                
+                // ドットの色を抽出して配列に戻す
+                for(let y=0; y<32; y++){
+                    for(let x=0; x<32; x++){
+                        const idx = (y*32+x)*4;
+                        if(idata[idx+3] > 128){ // 透明じゃなければ色を取得
+                            const r = idata[idx].toString(16).padStart(2,'0');
+                            const g = idata[idx+1].toString(16).padStart(2,'0');
+                            const b = idata[idx+2].toString(16).padStart(2,'0');
+                            pArray[y][x] = `#${r}${g}${b}`;
+                        }
+                    }
+                }
 
+                // ゲーム本来の変数名と「完全に同じ名前」で保存する
                 const newS = {
-                    species: data.n || "異界種",
                     name: data.n || "異界種",
-                    diet: data.d || "雑食",
-                    attribute: data.a || "ノーマル",
-                    statMin: Number(data.mi || 20),
-                    statMax: Number(data.ma || 60),
-                    // 耐性と放流数をすべての候補名にセット
-                    heatResist: Number(data.h || 0),
-                    coldResist: Number(data.c || 0),
-                    spawnCount: Number(data.s || 5),
-                    // ★ここが重要：メインプログラムが JSON.parse する対象
-                    stats: validStatsString,
-                    data: validStatsString,
-                    img: imgObj,
-                    image: imgObj,
                     url: data.i,
-                    maxLevel: 0
+                    pixels: pArray, // これがないと放流でエラーになる
+                    mi: Number(data.mi || 20),
+                    ma: Number(data.ma || 60),
+                    diet: data.d || "雑食",
+                    h: Number(data.h || 0), // 耐性エラー解消
+                    c: Number(data.c || 0), // 耐性エラー解消
+                    count: Number(data.s || 5), // 放流数エラー解消
+                    attribute: data.a || "ノーマル"
                 };
                 
                 if (window.speciesBook) {
                     speciesBook.push(newS);
-                    if (window.updateSpeciesBook) updateSpeciesBook();
-                    alert(`✨ ${newS.species} を召喚しました！`);
+                    alert(`✨ ${newS.name} の召喚に成功しました！`);
+                    if (window.updateSpeciesBook) window.updateSpeciesBook();
                 }
             };
             imgObj.src = data.i;
@@ -1656,41 +1669,27 @@ window.addEventListener('keydown', function(e) {
     window.exportMonsterCode = function(idx) {
         const s = speciesBook[idx];
         if (!s) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = 32; canvas.height = 32;
-        const ctx = canvas.getContext('2d');
-        const tempImg = new Image();
-        tempImg.onload = () => {
-            ctx.drawImage(tempImg, 0, 0, 32, 32);
-            const exportData = {
-                n: s.species || s.name, d: s.diet, a: s.attribute,
-                mi: s.statMin, ma: s.statMax,
-                h: s.heatResist || 0, c: s.coldResist || 0,
-                s: s.spawnCount || 5, i: canvas.toDataURL("image/webp", 0.7)
-            };
-            const bytes = new TextEncoder().encode(JSON.stringify(exportData));
-            let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-            createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
+        
+        // 変数名を正確に取得して書き出す
+        const exportData = {
+            n: s.name, 
+            d: s.diet, 
+            a: s.attribute,
+            mi: s.mi, 
+            ma: s.ma,
+            h: s.h, 
+            c: s.c,
+            s: s.count, 
+            i: s.url
         };
-        tempImg.src = s.url || (s.img && s.img.src) || (s.image && s.image.src) || s.img;
+        
+        const bytes = new TextEncoder().encode(JSON.stringify(exportData));
+        let bin = ""; for (let i=0; i<bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        createExchangeUI(`📜 ${exportData.n} の呪文`, btoa(bin), false);
     };
 
-    // ★最強のリアルタイム修理（undefinedを数字の0や有効なJSONに変換）
+    // UIボタンの配置
     setInterval(() => {
-        if (window.speciesBook) {
-            speciesBook.forEach(s => {
-                // 数値が undefined や NaN なら強制的に 0 またはデフォルト値にする
-                if (typeof s.heatResist !== 'number' || isNaN(s.heatResist)) s.heatResist = 0;
-                if (typeof s.coldResist !== 'number' || isNaN(s.coldResist)) s.coldResist = 0;
-                if (typeof s.spawnCount !== 'number' || isNaN(s.spawnCount)) s.spawnCount = 5;
-                
-                // エラーの元「stats」が文字列の "undefined" になっていたら JSON 形式に直す
-                if (!s.stats || s.stats === "undefined" || typeof s.stats !== 'string') {
-                    s.stats = JSON.stringify({ level: 1 });
-                }
-            });
-        }
-        // UIボタンの維持
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
             const btn = document.createElement('button');
@@ -1710,5 +1709,5 @@ window.addEventListener('keydown', function(e) {
                 card.appendChild(btn);
             }
         });
-    }, 500); // 0.5秒ごとにチェック
+    }, 1000);
 })();
