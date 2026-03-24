@@ -1588,7 +1588,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【真・完全版 V3】データ紐付け完全修正版
+// 【真・完全版 V4】データ完全同期＆自動修理システム
 // ==========================================
 (function() {
     function createExchangeUI(title, code, isImport) {
@@ -1619,40 +1619,21 @@ window.addEventListener('keydown', function(e) {
         try {
             const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(code.replace(/\s/g, '')), c => c.charCodeAt(0))));
             const imgObj = new Image();
-            
             imgObj.onload = function() {
                 imgObj.toString = function() { return this.src; };
-
-                // ★全ての可能性を網羅してデータをセット（これでundefinedを防ぐ）
                 const newS = {
-                    // 名前
-                    species: data.n || "異界種",
-                    name: data.n || "異界種",
-                    // 基本設定
-                    diet: data.d || "雑食",
-                    attribute: data.a || "ノーマル",
-                    // ステータス
-                    statMin: Number(data.mi || 20),
-                    statMax: Number(data.ma || 60),
-                    // 耐性（考えられる全ての変数名にセット）
-                    heatResist: Number(data.h || 0),
-                    coldResist: Number(data.c || 0),
-                    hResist: Number(data.h || 0),
-                    cResist: Number(data.c || 0),
-                    // 放流セット数
-                    spawnCount: Number(data.s || 5),
-                    releaseCount: Number(data.s || 5),
-                    count: Number(data.s || 5),
-                    // 画像
-                    img: imgObj,
-                    image: imgObj,
-                    url: data.i,
-                    maxLevel: 0
+                    species: data.n || "異界種", name: data.n || "異界種",
+                    diet: data.d || "雑食", attribute: data.a || "ノーマル",
+                    statMin: Number(data.mi || 20), statMax: Number(data.ma || 60),
+                    // ★あらゆる名前の可能性に対応
+                    heatResist: Number(data.h || 0), hResist: Number(data.h || 0), heat: Number(data.h || 0),
+                    coldResist: Number(data.c || 0), cResist: Number(data.c || 0), cold: Number(data.c || 0),
+                    spawnCount: Number(data.s || 5), releaseCount: Number(data.s || 5), count: Number(data.s || 5),
+                    img: imgObj, image: imgObj, url: data.i, maxLevel: 0
                 };
-
                 if (window.speciesBook) {
                     speciesBook.push(newS);
-                    alert(`✨ 召喚成功：${newS.species}\n放流も可能になりました！`);
+                    alert(`✨ 召喚成功：${newS.species}`);
                     if (window.updateSpeciesBook) updateSpeciesBook();
                 }
             };
@@ -1664,8 +1645,6 @@ window.addEventListener('keydown', function(e) {
         const s = speciesBook[idx];
         if (!s) return;
         let imgSrc = s.url || (s.img && s.img.src) || (s.image && s.image.src) || s.img || s.image;
-        if (!imgSrc || imgSrc.length < 10) return alert("画像データに問題があります。");
-
         const canvas = document.createElement('canvas');
         canvas.width = 32; canvas.height = 32;
         const ctx = canvas.getContext('2d');
@@ -1673,14 +1652,11 @@ window.addEventListener('keydown', function(e) {
         tempImg.onload = () => {
             ctx.drawImage(tempImg, 0, 0, 32, 32);
             const exportData = {
-                n: s.species || s.name, 
-                d: s.diet, 
-                a: s.attribute,
-                mi: s.statMin, 
-                ma: s.statMax, 
-                h: s.heatResist || s.hResist || 0, 
-                c: s.coldResist || s.cResist || 0,
-                s: s.spawnCount || s.releaseCount || 5, 
+                n: s.species || s.name || "ななし", d: s.diet || "雑食", a: s.attribute || "ノーマル",
+                mi: s.statMin || 20, ma: s.statMax || 60,
+                h: s.heatResist || s.hResist || s.heat || 0,
+                c: s.coldResist || s.cResist || s.cold || 0,
+                s: s.spawnCount || s.releaseCount || s.count || 5,
                 i: canvas.toDataURL("image/webp", 0.7)
             };
             const bytes = new TextEncoder().encode(JSON.stringify(exportData));
@@ -1690,7 +1666,15 @@ window.addEventListener('keydown', function(e) {
         tempImg.src = imgSrc;
     };
 
+    // ★重要：1秒ごとに図鑑データを監視して undefined を自動修理する
     setInterval(() => {
+        if (window.speciesBook) {
+            speciesBook.forEach(s => {
+                if (s.heatResist === undefined) s.heatResist = s.hResist || s.heat || 0;
+                if (s.coldResist === undefined) s.coldResist = s.cResist || s.cold || 0;
+                if (s.spawnCount === undefined) s.spawnCount = s.releaseCount || s.count || 5;
+            });
+        }
         const menu = document.getElementById('menuPanel');
         if (menu && !document.getElementById('importBtn')) {
             const btn = document.createElement('button');
