@@ -1711,3 +1711,84 @@ window.addEventListener('keydown', function(e) {
         });
     }, 1000);
 })();
+
+// ==========================================
+// 【スマホ対応】タッチ操作（スワイプ移動・ピンチズーム）追加コード
+// ==========================================
+(function() {
+    const canvas = document.getElementById('gameCanvas');
+    if (!canvas) return;
+
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let initialPinchDistance = null;
+
+    // 画面に指が触れたとき
+    canvas.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // 画面全体がスクロールしてしまうのを防ぐ
+        
+        if (e.touches.length === 1) {
+            // 1本指：移動の開始位置を記録
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+            // 2本指：拡大縮小の基準となる指の間の距離を計算
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+        }
+    }, { passive: false });
+
+    // 指を動かしたとき
+    canvas.addEventListener('touchmove', function(e) {
+        e.preventDefault(); // スマホの「戻る」スワイプなどを防ぐ
+        
+        if (e.touches.length === 1) {
+            // 1本指：カメラの移動（スワイプ）
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            const dx = touchX - lastTouchX;
+            const dy = touchY - lastTouchY;
+            
+            // ズーム率に合わせて移動スピードを調整し、camX, camY に反映
+            if (typeof camX !== 'undefined' && typeof camY !== 'undefined' && typeof zoom !== 'undefined') {
+                camX -= dx / zoom;
+                camY -= dy / zoom;
+            }
+            
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+            
+        } else if (e.touches.length === 2) {
+            // 2本指：カメラの拡大縮小（ピンチイン・ピンチアウト）
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (initialPinchDistance) {
+                const diff = distance - initialPinchDistance;
+                if (typeof zoom !== 'undefined') {
+                    zoom += diff * 0.005; // ズームの感度（速すぎる場合は 0.005 を小さくする）
+                    
+                    // ズームの限界値
+                    if (zoom < 0.1) zoom = 0.1; // これ以上縮小しない
+                    if (zoom > 3.0) zoom = 3.0; // これ以上拡大しない
+                }
+            }
+            initialPinchDistance = distance;
+        }
+    }, { passive: false });
+
+    // 指が離れたとき
+    canvas.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        if (e.touches.length < 2) {
+            initialPinchDistance = null; // 2本指じゃなくなったらズーム計算をリセット
+        }
+        if (e.touches.length === 1) {
+            // 片方の指だけ離した場合は、残った指で移動を引き継ぐ
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+    }, { passive: false });
+})();
