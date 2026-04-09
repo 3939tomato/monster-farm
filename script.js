@@ -1713,7 +1713,7 @@ window.addEventListener('keydown', function(e) {
 })();
 
 // ==========================================
-// 【スマホ対応】タッチ操作（スワイプ移動・ピンチズーム）追加コード
+// 【スマホ対応】タッチ操作（スワイプ移動・ピンチズーム・タップ対応）追加コード
 // ==========================================
 (function() {
     const canvas = document.getElementById('gameCanvas');
@@ -1722,6 +1722,11 @@ window.addEventListener('keydown', function(e) {
     let lastTouchX = 0;
     let lastTouchY = 0;
     let initialPinchDistance = null;
+    
+    // タップ判定用
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let hasMoved = false;
 
     // 画面に指が触れたとき
     canvas.addEventListener('touchstart', function(e) {
@@ -1731,11 +1736,15 @@ window.addEventListener('keydown', function(e) {
             // 1本指：移動の開始位置を記録
             lastTouchX = e.touches[0].clientX;
             lastTouchY = e.touches[0].clientY;
+            touchStartX = lastTouchX;
+            touchStartY = lastTouchY;
+            hasMoved = false; // タップ判定リセット
         } else if (e.touches.length === 2) {
             // 2本指：拡大縮小の基準となる指の間の距離を計算
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+            hasMoved = true; // 2本指はタップとみなさない
         }
     }, { passive: false });
 
@@ -1747,6 +1756,12 @@ window.addEventListener('keydown', function(e) {
             // 1本指：カメラの移動（スワイプ）
             const touchX = e.touches[0].clientX;
             const touchY = e.touches[0].clientY;
+            
+            // 少しでも指が動いたらスワイプと判定する（タップ扱いしない）
+            if (Math.abs(touchX - touchStartX) > 5 || Math.abs(touchY - touchStartY) > 5) {
+                hasMoved = true;
+            }
+            
             const dx = touchX - lastTouchX;
             const dy = touchY - lastTouchY;
             
@@ -1768,7 +1783,8 @@ window.addEventListener('keydown', function(e) {
             if (initialPinchDistance) {
                 const diff = distance - initialPinchDistance;
                 if (typeof zoom !== 'undefined') {
-                    zoom += diff * 0.005; // ズームの感度（速すぎる場合は 0.005 を小さくする）
+                    // ★ ズームの速度を遅く修正しました
+                    zoom += diff * 0.0015; 
                     
                     // ズームの限界値
                     if (zoom < 0.1) zoom = 0.1; // これ以上縮小しない
@@ -1782,6 +1798,26 @@ window.addEventListener('keydown', function(e) {
     // 指が離れたとき
     canvas.addEventListener('touchend', function(e) {
         e.preventDefault();
+        
+        // ★ 指が動いていなければ（タップなら）、PCのクリックと同じ処理をゲームに送る
+        if (!hasMoved && e.changedTouches.length === 1) {
+            const touch = e.changedTouches[0];
+            
+            const mousedownEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                bubbles: true
+            });
+            const clickEvent = new MouseEvent('click', {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                bubbles: true
+            });
+            
+            canvas.dispatchEvent(mousedownEvent);
+            canvas.dispatchEvent(clickEvent);
+        }
+
         if (e.touches.length < 2) {
             initialPinchDistance = null; // 2本指じゃなくなったらズーム計算をリセット
         }
